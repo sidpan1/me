@@ -25,7 +25,12 @@ gem 'sdoc', '~> 0.4.0', group: :doc
 gem 'bootstrap-sass'
 gem 'sass-rails'
 
+gem 'pagedown-bootstrap-rails'
 
+gem 'simple_form'
+gem 'font-awesome-rails'
+
+gem 'react-rails'
 
 
 # Use ActiveModel has_secure_password

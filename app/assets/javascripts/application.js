@@ -14,5 +14,10 @@
 //= require jquery_ujs
 //= require turbolinks
 //= require jquery
+//= require pagedown_bootstrap
+//= require pagedown_init
 //= require bootstrap-sprockets
+//= require react
+//= require react_ujs
+//= require components
 //= require_tree .
