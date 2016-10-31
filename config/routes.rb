@@ -1,6 +1,10 @@
 Rails.application.routes.draw do
   root 'welcome#index'
 
+  get 'blog' => 'blog#index'
+  get 'photography' => 'photography#index'
+  get 'music' => 'music#index'
+
   namespace :api do
     resources :posts, only: [ :index, :show ]
   end

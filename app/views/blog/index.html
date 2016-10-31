@@ -7,7 +7,6 @@
     <% end %>
 </div>
 
-<a class="btn btn-primary pull-right" href="/blog">
-    More blog posts
-    <span aria-hidden="true" class="fa fa-fw fa-angle-double-right"></span>
-</a>
+<div class="center-align">
+    <%= will_paginate @posts, renderer: BootstrapPagination::Rails %>
+</div>
