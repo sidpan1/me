@@ -1,11 +1,11 @@
-<div class="list-group">
-    <% @posts.each do |post| %>
-    <a href="/admin/posts/<%= post.id%>" class="list-group-item">
-        <h4 class="list-group-item-heading"><%= post.title %></h4>
-        <p class="list-group-item-text"><%= post.content %></p>
-    </a>
-    <% end %>
-</div>
+<% @posts.each do |post| %>
+<article>
+    <label class="h1"><a href="/posts/<%= post.id%>"><%= post.title %></a></label>
+    <br>
+    <time> 3 days ago.</time>
+    <p>Google Chrome is a free, open-source web browser developed by Google, released in 2008.</p>
+</article>
+<% end %>
 
 <div class="center-align">
     <%= will_paginate @posts, renderer: BootstrapPagination::Rails, class: "pagination pagination-centered"  %>

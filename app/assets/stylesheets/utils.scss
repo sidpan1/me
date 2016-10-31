@@ -6,3 +6,48 @@ body {
 .main-body {
   padding-right: 50px;
 }
+
+.brand-color-text {
+  color: #784cab;
+}
+
+.brand-color-box {
+  background: #784cab;
+  color: white !important;
+}
+
+/* unvisited link */
+a:link {
+  color: #784cab;
+}
+
+/* visited link */
+a:visited {
+  color: #784cab;
+}
+
+/* mouse over link */
+a:hover {
+  color: #2f0f59;
+}
+
+/* selected link */
+a:active {
+  color: #784cab;
+}
+
+.navbar-brand {
+  color: #784cab;
+}
+
+.pagination > .active > span,
+.pagination > .active > span:hover {
+  background: #784cab;
+}
+
+.pagination > li > a:hover,
+.pagination > li > a:active,
+.pagination > li > a:visited,
+.pagination > li > a:link {
+  color: #784cab;
+}

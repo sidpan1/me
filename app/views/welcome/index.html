@@ -1,13 +1,15 @@
-<div class="list-group">
-    <% @posts.each do |post| %>
-    <a href="/admin/posts/<%= post.id%>" class="list-group-item">
-        <h4 class="list-group-item-heading"><%= post.title %></h4>
-        <p class="list-group-item-text"><%= post.content %></p>
-    </a>
-    <% end %>
-</div>
+<% @posts.each do |post| %>
+<article>
+    <label class="h1"><a href="/posts/<%= post.id%>" class="brand-color-text"><%= post.title %></a></label>
+    <br>
+    <time> 3 days ago.</time>
+    <p>Google Chrome is a free, open-source web browser developed by Google, released in 2008.</p>
+</article>
+<% end %>
+<br>
 
-<a class="btn btn-primary pull-right" href="/blog">
+<a class="btn brand-color-box  pull-right" href="/blog">
     More blog posts
     <span aria-hidden="true" class="fa fa-fw fa-angle-double-right"></span>
 </a>
+<br>
