@@ -17,9 +17,19 @@ time {
   color: grey
 }
 
-body {
-  padding-top: 50px;
-  padding-bottom: 10px;
+.img-circle {
+  width: 96px;
+  height: 96px;
+}
+
+.main-body {
+  padding-right: 15px;
+  padding-left: 15px;
+}
+
+.side-body {
+  padding-right: 15px;
+  padding-left: 15px;
 }
 
 .main-body {
