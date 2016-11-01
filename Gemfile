@@ -34,6 +34,7 @@ gem 'react-rails'
 
 gem 'will_paginate'
 gem 'will_paginate-bootstrap'
+gem 'redcarpet'
 
 
 # Use ActiveModel has_secure_password

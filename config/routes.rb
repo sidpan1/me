@@ -2,6 +2,7 @@ Rails.application.routes.draw do
   root 'welcome#index'
 
   get 'blog' => 'blog#index'
+  get 'blog/:id' => 'blog#show'
   get 'photography' => 'photography#index'
   get 'music' => 'music#index'
 
