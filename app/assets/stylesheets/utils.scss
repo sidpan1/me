@@ -23,7 +23,12 @@ body {
 }
 
 .brand-color-box {
-  background: #784cab;
+   background: #784cab;
+   color: white !important;
+}
+
+.jumbotron {
+  background-image: linear-gradient(180deg, #784cab, #fff);
   color: white !important;
 }
 
