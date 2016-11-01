@@ -2,6 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="34acbe32-bcab-4295-a981-ba4618ebba37" name="Default" comment="">
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/app/models/post.rb" afterPath="$PROJECT_DIR$/app/models/post.rb" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/app/views/layouts/application.html.erb" afterPath="$PROJECT_DIR$/app/views/layouts/application.html.erb" />
     </list>
     <ignored path="me.iws" />
@@ -29,11 +31,21 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
+      <file leaf-file-name="post.rb" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/app/models/post.rb">
+          <provider selected="true" editor-type-id="text-editor">
+            <state vertical-scroll-proportion="0.0">
+              <caret line="17" column="0" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
       <file leaf-file-name="application.html.erb" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/app/views/layouts/application.html.erb">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="0.4893617">
-              <caret line="16" column="54" selection-start-line="16" selection-start-column="54" selection-end-line="16" selection-end-column="54" />
+            <state vertical-scroll-proportion="0.63829786">
+              <caret line="62" column="14" selection-start-line="62" selection-start-column="14" selection-end-line="62" selection-end-column="14" />
               <folding>
                 <element signature="n#style#0;n#img#0;n#figure#0;n#div#0;n#div#1;n#div#1;n#body#0;n#html#0;n#!!top" expanded="true" />
               </folding>
@@ -82,7 +94,6 @@
         <option value="$PROJECT_DIR$/app/views/blog/index.html" />
         <option value="$PROJECT_DIR$/app/views/admin/posts/index.html.erb" />
         <option value="$PROJECT_DIR$/app/views/admin/posts/show.html.erb" />
-        <option value="$PROJECT_DIR$/app/models/post.rb" />
         <option value="$PROJECT_DIR$/app/controllers/blog_controller.rb" />
         <option value="$PROJECT_DIR$/app/controllers/welcome_controller.rb" />
         <option value="$PROJECT_DIR$/Gemfile" />
@@ -90,6 +101,7 @@
         <option value="$PROJECT_DIR$/app/assets/stylesheets/application.scss" />
         <option value="$PROJECT_DIR$/app/views/music/index.html" />
         <option value="$PROJECT_DIR$/app/assets/stylesheets/utils.scss" />
+        <option value="$PROJECT_DIR$/app/models/post.rb" />
         <option value="$PROJECT_DIR$/app/views/layouts/application.html.erb" />
       </list>
     </option>
@@ -170,7 +182,57 @@
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
             <PATH_ELEMENT>
+              <option name="myItemId" value="config" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="config" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="initializers" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
               <option name="myItemId" value="app" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="me" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="app" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="models" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -226,7 +288,7 @@
     <property name="HbShouldOpenHtmlAsHb" value="" />
     <property name="FullScreen" value="true" />
     <property name="last_opened_file_path" value="$USER_HOME$/src/gatekeeper" />
-    <property name="SearchEverywhereHistoryKey" value="gem&#9;FILE&#9;file:///Users/sid/personal/me/Gemfile&#10;application.js&#9;FILE&#9;file:///Users/sid/personal/me/app/assets/javascripts/application.js&#10;rou&#9;FILE&#9;file:///Users/sid/personal/me/config/routes.rb&#10;rout&#9;FILE&#9;file:///Users/sid/personal/me/config/routes.rb&#10;index&#9;FILE&#9;file:///Users/sid/personal/me/app/views/welcome/index.html&#10;welcome&#9;FILE&#9;file:///Users/sid/personal/me/app/controllers/welcome_controller.rb&#10;produ&#9;FILE&#9;file:///Users/sid/personal/me/config/environments/production.rb&#10;develop&#9;FILE&#9;file:///Users/sid/personal/me/config/environments/development.rb&#10;applica&#9;FILE&#9;file:///Users/sid/personal/me/app/assets/javascripts/application.js" />
+    <property name="SearchEverywhereHistoryKey" value="&#9;FILE&#9;file:///Users/sid/personal/me/app/views/layouts/application.html.erb&#10;ge&#9;FILE&#9;file:///Users/sid/personal/me/Gemfile&#10;gem&#9;FILE&#9;file:///Users/sid/personal/me/Gemfile&#10;application.js&#9;FILE&#9;file:///Users/sid/personal/me/app/assets/javascripts/application.js&#10;rou&#9;FILE&#9;file:///Users/sid/personal/me/config/routes.rb&#10;rout&#9;FILE&#9;file:///Users/sid/personal/me/config/routes.rb&#10;index&#9;FILE&#9;file:///Users/sid/personal/me/app/views/welcome/index.html&#10;welcome&#9;FILE&#9;file:///Users/sid/personal/me/app/controllers/welcome_controller.rb&#10;produ&#9;FILE&#9;file:///Users/sid/personal/me/config/environments/production.rb&#10;develop&#9;FILE&#9;file:///Users/sid/personal/me/config/environments/development.rb&#10;applica&#9;FILE&#9;file:///Users/sid/personal/me/app/assets/javascripts/application.js" />
     <property name="js-jscs-nodeInterpreter" value="/usr/local/bin/node" />
   </component>
   <component name="RecentsManager">
@@ -756,14 +818,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/app/models/post.rb">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.30364373">
-          <caret line="10" column="8" selection-start-line="10" selection-start-column="8" selection-end-line="10" selection-end-column="8" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/app/controllers/welcome_controller.rb">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.15182187">
@@ -806,14 +860,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/Gemfile">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.7327935">
-          <caret line="36" column="16" selection-start-line="36" selection-start-column="16" selection-end-line="36" selection-end-column="16" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/app/assets/stylesheets/application.scss">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.44680852">
@@ -835,10 +881,34 @@
         <state />
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/config/initializers/friendly_id.rb">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.12145749">
+          <caret line="65" column="34" selection-start-line="65" selection-start-column="34" selection-end-line="65" selection-end-column="34" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/Gemfile">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.58097166">
+          <caret line="36" column="16" selection-start-line="36" selection-start-column="16" selection-end-line="36" selection-end-column="16" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/app/models/post.rb">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.0">
+          <caret line="17" column="0" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/app/views/layouts/application.html.erb">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.4893617">
-          <caret line="16" column="54" selection-start-line="16" selection-start-column="54" selection-end-line="16" selection-end-column="54" />
+        <state vertical-scroll-proportion="0.63829786">
+          <caret line="62" column="14" selection-start-line="62" selection-start-column="14" selection-end-line="62" selection-end-column="14" />
           <folding>
             <element signature="n#style#0;n#img#0;n#figure#0;n#div#0;n#div#1;n#div#1;n#body#0;n#html#0;n#!!top" expanded="true" />
           </folding>

@@ -12,4 +12,8 @@ class Post < ActiveRecord::Base
     where published: true
   }
 
+  def should_generate_new_friendly_id?
+    true
+  end
+
 end
