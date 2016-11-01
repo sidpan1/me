@@ -1,3 +1,7 @@
 <h1 class="brand-color-text"><%= @post.title %></h1>
 
+<label>
+    <%= @post.summary %>
+</label>
+
 <%= Redcarpet::Markdown.new(Redcarpet::Render::HTML, extensions = {}).render(@post.content).html_safe %>

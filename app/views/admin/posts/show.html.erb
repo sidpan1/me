@@ -4,6 +4,10 @@
   <%= @post.title %>
 </h1>
 
+<label>
+  <%= @post.summary %>
+</label>
+
 <%= Redcarpet::Markdown.new(Redcarpet::Render::HTML, extensions = {}).render(@post.content).html_safe %>
 
 <%= link_to 'Edit', edit_admin_post_path(@post), class: 'btn btn-default' %>
