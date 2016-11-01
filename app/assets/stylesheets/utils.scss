@@ -21,6 +21,10 @@ time {
   width: 96px;
   height: 96px;
 }
+body {
+  padding-top: 50px;
+  padding-bottom: 10px;
+}
 
 .main-body {
   padding-right: 15px;
@@ -30,11 +34,6 @@ time {
 .side-body {
   padding-right: 15px;
   padding-left: 15px;
-}
-
-.main-body {
-  padding-right: 30px;
-  padding-left: 30px;
 }
 
 .brand-color-text {
