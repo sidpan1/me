@@ -9,13 +9,22 @@
   color: white;
 }
 
+.summary {
+  margin-top: 10px
+}
+
+time {
+  color: grey
+}
+
 body {
   padding-top: 50px;
   padding-bottom: 10px;
 }
 
 .main-body {
-  padding-right: 50px;
+  padding-right: 30px;
+  padding-left: 30px;
 }
 
 .brand-color-text {
@@ -61,6 +70,7 @@ a:active {
 .pagination > .active > span,
 .pagination > .active > span:hover {
   background: #784cab;
+  border-color: #784cab;
 }
 
 .pagination > li > a:hover,
