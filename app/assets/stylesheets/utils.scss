@@ -1,11 +1,11 @@
 .navbar-white {
   background-color: white;
-  border-color: #784cab;
+  border-color: #3AAED8;
 }
 
 .navbar-nav > li > a:hover,
 .navbar-nav > li > a:focus {
-  background-color: #784cab;
+  background-color: #3AAED8;
   color: white;
 }
 
@@ -37,16 +37,15 @@ body {
 }
 
 .brand-color-text {
-  color: #784cab;
+  color: #3AAED8;
 }
 
 .brand-color-box {
-   background: #784cab;
+   background: #3AAED8;
    color: white !important;
 }
 
 .jumbotron {
-  background-image: linear-gradient(180deg, #784cab, #fff);
   color: white !important;
   padding-top: 24px;
   padding-bottom: 72px;
@@ -54,37 +53,37 @@ body {
 
 /* unvisited link */
 a:link {
-  color: #784cab;
+  color: #3AAED8;
 }
 
 /* visited link */
 a:visited {
-  color: #784cab;
+  color: #3AAED8;
 }
 
 /* mouse over link */
 a:hover {
-  color: #2f0f59;
+  color: #256E89;
 }
 
 /* selected link */
 a:active {
-  color: #784cab;
+  color: #3AAED8;
 }
 
 .navbar-brand {
-  color: #784cab;
+  color: #3AAED8;
 }
 
 .pagination > .active > span,
 .pagination > .active > span:hover {
-  background: #784cab;
-  border-color: #784cab;
+  background: #3AAED8;
+  border-color: #3AAED8;
 }
 
 .pagination > li > a:hover,
 .pagination > li > a:active,
 .pagination > li > a:visited,
 .pagination > li > a:link {
-  color: #784cab;
+  color: #3AAED8;
 }
