@@ -472,54 +472,179 @@ def _get_sandbox_pod_name(self, task_id: str) -> str:
 ## FR-3: Clone repository
 **Requirement:** Agent clones specified repo using provided GitHub token
 
-### Implementation with Agent Sandbox
+### Implementation with Agent Sandbox (Python + Claude Agent SDK)
 
-This happens **inside the container** as part of the execution script.
+This happens **inside the container** as part of the execution script. We use Python with the Claude Agent SDK for better error handling, type safety, and direct plugin loading.
 
-```bash
-# docker/execute.sh
-#!/bin/bash
-set -e  # Exit on error
-set -o pipefail  # Catch errors in pipes
+```python
+# docker/execute.py
+#!/usr/bin/env python3
+"""
+Task execution script using Claude Agent SDK.
+Replaces bash execute.sh with type-safe Python implementation.
 
-# Enable logging
-exec 1> >(tee -a /workspace/execution.log)
-exec 2>&1
+Benefits over bash:
+- Type-safe Claude Agent SDK integration
+- Direct plugin loading without copying
+- Better error handling with exceptions
+- Structured logging
+- Testable with pytest
+"""
 
-echo "[$(date)] Starting task execution: $TASK_ID"
+import asyncio
+import os
+import sys
+import json
+import subprocess
+import signal
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+from claude_agent_sdk import query, ClaudeAgentOptions
 
 # ============================================
-# FR-3: Clone Repository
+# Configuration & Logging
 # ============================================
 
-WORKSPACE_DIR="/workspace"
-REPO_DIR="$WORKSPACE_DIR/repo"
+WORKSPACE_DIR = Path("/workspace")
+REPO_DIR = WORKSPACE_DIR / "repo"
+LOG_FILE = WORKSPACE_DIR / "execution.log"
 
-echo "[$(date)] Cloning repository: $REPO_URL"
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE)
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# Construct authenticated clone URL
-# Input: REPO_URL=github.com/swiggy/order-service
-# Output: https://x-access-token:${GITHUB_TOKEN}@github.com/swiggy/order-service.git
 
-if [[ "$REPO_URL" == github.com/* ]]; then
-    CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@${REPO_URL}.git"
-elif [[ "$REPO_URL" == gitlab.com/* ]]; then
-    CLONE_URL="https://oauth2:${GITHUB_TOKEN}@${REPO_URL}.git"
-else
-    echo "[ERROR] Unsupported git provider: $REPO_URL"
-    exit 1
-fi
+# ============================================
+# Environment Variables
+# ============================================
 
-# Clone with depth=1 for speed (MVP doesn't need full history)
-git clone --depth 1 --branch "$BASE_BRANCH" "$CLONE_URL" "$REPO_DIR"
+def get_required_env(name: str) -> str:
+    """Get required environment variable or raise error."""
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(f"Required environment variable {name} not set")
+    return value
 
-cd "$REPO_DIR"
 
-# Configure git identity (required for commits)
-git config user.name "Coding Agent"
-git config user.email "agent@coding-agents-platform.com"
+TASK_ID = get_required_env("TASK_ID")
+REPO_URL = get_required_env("REPO_URL")
+TASK_DESCRIPTION = get_required_env("TASK_DESCRIPTION")
+BASE_BRANCH = get_required_env("BASE_BRANCH")
+NEW_BRANCH_ORIGINAL = get_required_env("NEW_BRANCH")
+GITHUB_TOKEN = get_required_env("GITHUB_TOKEN")
+ANTHROPIC_API_KEY = get_required_env("ANTHROPIC_API_KEY")
+TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "default")
 
-echo "[$(date)] Repository cloned successfully"
+# Mutable - may be modified if branch exists
+NEW_BRANCH = NEW_BRANCH_ORIGINAL
+
+
+# ============================================
+# Custom Exceptions
+# ============================================
+
+class TaskExecutionError(Exception):
+    """Base exception for task execution errors."""
+    pass
+
+
+class GitError(TaskExecutionError):
+    """Git operation failed."""
+    pass
+
+
+class ClaudeCodeError(TaskExecutionError):
+    """Claude Code execution failed."""
+    pass
+
+
+class TemplateInitError(TaskExecutionError):
+    """Template initialization failed."""
+    pass
+
+
+# ============================================
+# Git Operations
+# ============================================
+
+def run_git(*args, check: bool = True, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+    """
+    Run git command with proper error handling.
+
+    Args:
+        *args: Git command arguments
+        check: Whether to raise exception on non-zero exit
+        cwd: Working directory (defaults to REPO_DIR)
+
+    Returns:
+        CompletedProcess with stdout/stderr
+
+    Raises:
+        GitError: If command fails and check=True
+    """
+    result = subprocess.run(
+        ["git"] + list(args),
+        cwd=cwd or REPO_DIR,
+        capture_output=True,
+        text=True,
+    )
+
+    if check and result.returncode != 0:
+        raise GitError(
+            f"Git command failed: git {' '.join(args)}\n"
+            f"Exit code: {result.returncode}\n"
+            f"Stderr: {result.stderr}"
+        )
+
+    return result
+
+
+def clone_repository() -> None:
+    """
+    FR-3: Clone repository using provided GitHub token.
+
+    Constructs authenticated clone URL based on git provider.
+    Supports GitHub, GitLab, and Bitbucket.
+    """
+    logger.info(f"Cloning repository: {REPO_URL}")
+
+    # Construct authenticated clone URL based on provider
+    if REPO_URL.startswith("github.com/"):
+        clone_url = f"https://x-access-token:{GITHUB_TOKEN}@{REPO_URL}.git"
+    elif REPO_URL.startswith("gitlab.com/"):
+        clone_url = f"https://oauth2:{GITHUB_TOKEN}@{REPO_URL}.git"
+    elif REPO_URL.startswith("bitbucket.org/"):
+        clone_url = f"https://x-token-auth:{GITHUB_TOKEN}@{REPO_URL}.git"
+    else:
+        raise GitError(f"Unsupported git provider: {REPO_URL}")
+
+    # Clone with depth=1 for speed (MVP doesn't need full history)
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", BASE_BRANCH, clone_url, str(REPO_DIR)],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise GitError(f"Clone failed: {result.stderr}")
+
+    # Configure git identity (required for commits)
+    run_git("config", "user.name", "Coding Agent")
+    run_git("config", "user.email", "agent@coding-agents-platform.com")
+
+    logger.info("Repository cloned successfully")
 ```
 
 **Key Details:**
@@ -534,42 +659,47 @@ echo "[$(date)] Repository cloned successfully"
    - Clone specific branch with `--branch` flag
 
 3. **Error Handling:**
-   - `set -e` ensures script exits on any error
-   - Logs redirected to `/workspace/execution.log` for debugging
+   - Custom `GitError` exception with detailed error messages
+   - Structured logging to `/workspace/execution.log`
+   - Type-safe with Python type hints
 
 ---
 
 ## FR-4: Create feature branch
 **Requirement:** Agent creates new branch from specified base branch
 
-### Implementation
+### Implementation (Python)
 
-```bash
-# docker/execute.sh (continued)
+```python
+# docker/execute.py (continued)
 
-# ============================================
-# FR-4: Create Feature Branch
-# ============================================
+def create_feature_branch() -> str:
+    """
+    FR-4: Create feature branch from base branch.
 
-echo "[$(date)] Creating feature branch: $NEW_BRANCH"
+    If branch already exists remotely, appends timestamp to make unique.
 
-# Check if branch already exists remotely
-if git ls-remote --heads origin "$NEW_BRANCH" | grep -q "$NEW_BRANCH"; then
-    echo "[WARNING] Branch $NEW_BRANCH already exists remotely"
+    Returns:
+        The actual branch name used (may differ from NEW_BRANCH if conflict)
+    """
+    global NEW_BRANCH
 
-    # Option 1: Fail fast
-    # exit 1
+    logger.info(f"Creating feature branch: {NEW_BRANCH}")
 
-    # Option 2: Append timestamp to make unique
-    TIMESTAMP=$(date +%s)
-    NEW_BRANCH="${NEW_BRANCH}-${TIMESTAMP}"
-    echo "[INFO] Using unique branch name: $NEW_BRANCH"
-fi
+    # Check if branch already exists remotely
+    result = run_git("ls-remote", "--heads", "origin", NEW_BRANCH, check=False)
 
-# Create and checkout new branch
-git checkout -b "$NEW_BRANCH"
+    if NEW_BRANCH in result.stdout:
+        logger.warning(f"Branch {NEW_BRANCH} already exists remotely")
+        timestamp = int(time.time())
+        NEW_BRANCH = f"{NEW_BRANCH_ORIGINAL}-{timestamp}"
+        logger.info(f"Using unique branch name: {NEW_BRANCH}")
 
-echo "[$(date)] Feature branch created: $NEW_BRANCH"
+    # Create and checkout new branch
+    run_git("checkout", "-b", NEW_BRANCH)
+
+    logger.info(f"Feature branch created: {NEW_BRANCH}")
+    return NEW_BRANCH
 ```
 
 **Key Details:**
@@ -577,168 +707,299 @@ echo "[$(date)] Feature branch created: $NEW_BRANCH"
 1. **Branch Naming:**
    - Client provides branch name (e.g., `feature/rate-limiting`)
    - Platform validates format (no spaces, special chars)
-   - Option to auto-append timestamp if branch exists
+   - Auto-appends timestamp if branch exists
 
 2. **Base Branch Handling:**
    - Already checked out during clone (`--branch $BASE_BRANCH`)
    - New branch created from current HEAD
 
 3. **Conflict Resolution:**
-   - If branch exists: fail or generate unique name
-   - MVP approach: append timestamp
+   - If branch exists: generate unique name with timestamp
+   - Returns actual branch name used
 
 ---
 
 ## FR-5: Execute Claude Code
 **Requirement:** Agent runs Claude Code with task description, template auto-loaded
 
-### Implementation
+### Implementation (Python + Claude Agent SDK)
 
-Templates contain plugins and initialization scripts. The platform runs the template's `init.sh` script which installs all plugins before executing Claude Code.
+The Claude Agent SDK (`claude-agent-sdk`) replaces CLI invocation with programmatic control. **Key advantage: Plugins can be loaded directly by path without copying.**
 
-```bash
-# docker/execute.sh (continued)
+```python
+# docker/execute.py (continued)
 
-# ============================================
-# FR-5: Execute Claude Code
-# ============================================
+def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
+    """
+    Discover plugins in template directory.
 
-echo "[$(date)] Executing Claude Code with task: $TASK_DESCRIPTION"
+    The Claude Agent SDK can load plugins directly by path,
+    eliminating the need to copy files or install via marketplace.
 
-# Claude Code expects to be in the repo directory
-cd "$REPO_DIR"
+    Args:
+        template_dir: Path to template directory
 
-# Check if template has initialization script
-TEMPLATE_INIT_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/scripts/init.sh"
+    Returns:
+        List of plugin configurations for ClaudeAgentOptions
+    """
+    plugins = []
+    plugins_dir = template_dir / "plugins"
 
-if [ -f "$TEMPLATE_INIT_SCRIPT" ]; then
-    echo "[$(date)] Running template initialization: $TEMPLATE_INIT_SCRIPT"
+    if plugins_dir.exists():
+        for plugin_path in plugins_dir.iterdir():
+            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
+                logger.info(f"Discovered plugin: {plugin_path.name}")
+                # SDK loads plugins directly by path - NO COPYING NEEDED
+                plugins.append({
+                    "type": "local",
+                    "path": str(plugin_path)
+                })
 
-    # Make executable
-    chmod +x "$TEMPLATE_INIT_SCRIPT"
+    return plugins
 
-    # Execute template initialization
-    # This installs plugins and sets up environment
-    bash "$TEMPLATE_INIT_SCRIPT"
-    INIT_EXIT_CODE=$?
 
-    if [ $INIT_EXIT_CODE -ne 0 ]; then
-        echo "[ERROR] Template initialization failed with exit code $INIT_EXIT_CODE"
-        exit $INIT_EXIT_CODE
-    fi
-else
-    echo "[$(date)] No template initialization script found, skipping plugin installation"
-fi
+def run_template_init(template_dir: Path) -> None:
+    """
+    Run template initialization script (Python version).
 
-# Run Claude Code
-echo "[$(date)] Running Claude Code"
+    Args:
+        template_dir: Path to template directory
 
-# Build Claude Code command with optional system prompt file
-CLAUDE_CMD="claude --print --dangerously-skip-permissions"
+    Raises:
+        TemplateInitError: If initialization fails
+    """
+    # Check for Python init script first, then fall back to bash
+    init_py = template_dir / "scripts" / "init.py"
+    init_sh = template_dir / "scripts" / "init.sh"
 
-# Add system prompt file if agent.md exists
-if [ -f "$REPO_DIR/.claude/agent.md" ]; then
-    echo "[$(date)] Using agent system prompt from: $REPO_DIR/.claude/agent.md"
-    CLAUDE_CMD="$CLAUDE_CMD --system-prompt-file '$REPO_DIR/.claude/agent.md'"
-fi
+    if init_py.exists():
+        logger.info(f"Running Python initialization: {init_py}")
+        result = subprocess.run(
+            [sys.executable, str(init_py)],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
+        )
+        if result.returncode != 0:
+            raise TemplateInitError(f"Init script failed: {result.stderr}")
+    elif init_sh.exists():
+        logger.info(f"Running bash initialization: {init_sh}")
+        result = subprocess.run(
+            ["bash", str(init_sh)],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
+        )
+        if result.returncode != 0:
+            raise TemplateInitError(f"Init script failed: {result.stderr}")
+    else:
+        logger.info("No template initialization script found, skipping")
 
-# Execute Claude Code
-CLAUDE_CMD="$CLAUDE_CMD '$TASK_DESCRIPTION'"
-eval $CLAUDE_CMD
 
-CLAUDE_EXIT_CODE=$?
+async def execute_claude_code(task_description: str) -> None:
+    """
+    FR-5: Execute Claude Code using the Agent SDK.
 
-if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    echo "[ERROR] Claude Code failed with exit code $CLAUDE_EXIT_CODE"
-    exit $CLAUDE_EXIT_CODE
-fi
+    Key benefits over CLI:
+    - In-process execution (no subprocess overhead)
+    - Direct plugin loading by path (no copying/installation)
+    - Typed responses and error handling
+    - Custom hooks for permission control
+    - Better streaming output handling
 
-echo "[$(date)] Execution completed successfully"
+    Args:
+        task_description: The task to execute
+
+    Raises:
+        ClaudeCodeError: If execution fails
+    """
+    logger.info(f"Executing Claude Code with task: {task_description[:100]}...")
+
+    template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
+
+    # Run template initialization (dependencies, settings)
+    if template_dir.exists():
+        run_template_init(template_dir)
+
+    # Discover plugins directly from template directory
+    # NO COPYING NEEDED - SDK loads by path
+    plugins = discover_plugins(template_dir)
+    logger.info(f"Loading {len(plugins)} plugins directly from template")
+
+    # Build SDK options
+    options = ClaudeAgentOptions(
+        # Working directory
+        cwd=str(REPO_DIR),
+
+        # Permission mode replaces --dangerously-skip-permissions
+        # 'acceptEdits' auto-approves file edits
+        permission_mode='acceptEdits',
+
+        # Allowed tools (can be customized per template)
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch"],
+
+        # Load plugins directly by path - KEY FEATURE
+        plugins=plugins,
+
+        # System prompt from template
+        system_prompt=_load_system_prompt(template_dir),
+
+        # Additional directories for file access
+        add_dirs=[str(REPO_DIR)],
+    )
+
+    # Execute and stream responses
+    try:
+        async for message in query(prompt=task_description, options=options):
+            # Handle different message types
+            if hasattr(message, 'content'):
+                for block in message.content:
+                    if hasattr(block, 'text'):
+                        print(block.text)
+                    elif hasattr(block, 'tool_use'):
+                        logger.debug(f"Tool use: {block.tool_use.name}")
+
+        logger.info("Claude Code execution completed successfully")
+
+    except Exception as e:
+        raise ClaudeCodeError(f"Claude Code execution failed: {str(e)}")
+
+
+def _load_system_prompt(template_dir: Path) -> Optional[str]:
+    """Load system prompt from agent.md if it exists."""
+    agent_md = template_dir / "agent.md"
+    if agent_md.exists():
+        logger.info(f"Loading system prompt from: {agent_md}")
+        return agent_md.read_text()
+
+    # Also check .claude/agent.md
+    agent_md_alt = REPO_DIR / ".claude" / "agent.md"
+    if agent_md_alt.exists():
+        logger.info(f"Loading system prompt from: {agent_md_alt}")
+        return agent_md_alt.read_text()
+
+    return None
 ```
 
-**Template Structure:**
+**Template Structure (Updated for Python):**
 
-```bash
-# .claude-templates/backend/
+```
 .claude-templates/backend/
+├── plugins/                      # Plugins loaded DIRECTLY by SDK
+│   ├── test-runner/
+│   │   ├── .claude-plugin/
+│   │   │   └── plugin.json
+│   │   ├── skills/
+│   │   └── commands/
+│   └── code-quality/
+│       └── ...
 ├── scripts/
-│   └── init.sh                   # Initialization script
-├── agent.md                      # Main system instructions for the agent
-├── CLAUDE.md                     # Template instructions for Claude
-└── settings.json                 # Claude Code settings (plugin refs)
+│   └── init.py                   # Python initialization script
+├── agent.md                      # System prompt for the agent
+├── CLAUDE.md                     # Project context (auto-read)
+└── settings.json                 # Additional settings
 ```
 
-**File Purposes:**
-- `agent.md`: Main system prompt defining the agent's role, behavior, and expertise (passed via `--system-prompt-file`)
-- `CLAUDE.md`: Project-specific context and instructions (automatically read by Claude Code)
-- `settings.json`: Plugin marketplace references and Claude Code settings
+**Key Difference: Direct Plugin Loading**
 
-**Note:** Based on [Claude Code documentation](https://code.claude.com/docs/en/plugins), plugins are NOT stored in template directories. Instead:
-- Plugins are referenced via marketplace URLs in `settings.json`
-- Claude Code installs plugins to `~/.claude/plugins/marketplaces/`
-- Templates only contain configuration, not plugin code
+The Claude Agent SDK can load plugins directly by path, eliminating the need to copy files or install via marketplace:
 
-**Initialization Script (`scripts/init.sh`):**
+```python
+# OLD APPROACH (bash): Copy plugins, install via marketplace
+# cp "$TEMPLATE_ROOT/plugins/*" ~/.claude/plugins/
+# claude --plugin-dir "$PLUGIN_DIR"
 
-```bash
-#!/bin/bash
-# .claude-templates/backend/scripts/init.sh
-set -e
+# NEW APPROACH (Python SDK): Load directly by path
+options = ClaudeAgentOptions(
+    plugins=[
+        {"type": "local", "path": "./plugins/test-runner"},
+        {"type": "local", "path": "./plugins/code-quality"},
+    ]
+)
+```
 
-echo "==================================="
-echo "Backend Template Initialization"
-echo "==================================="
+**Initialization Script (`scripts/init.py`):**
 
-TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
+```python
+#!/usr/bin/env python3
+"""
+Template initialization script (Python version).
+Replaces init.sh with type-safe Python implementation.
+"""
 
-# 1. Install project dependencies
-echo "[1/4] Installing dependencies..."
-npm install
+import os
+import sys
+import shutil
+import subprocess
+from pathlib import Path
 
-# 2. Configure Claude Code settings
-# Claude Code uses .claude/settings.json in project root
-echo "[2/4] Configuring Claude Code..."
+# Get paths from environment
+REPO_DIR = Path(os.environ.get("REPO_DIR", "."))
+TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "backend")
+TEMPLATE_ROOT = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
 
-# Copy template settings to .claude/ directory
-mkdir -p "$REPO_DIR/.claude"
 
-if [ -f "$TEMPLATE_ROOT/settings.json" ]; then
-    cp "$TEMPLATE_ROOT/settings.json" "$REPO_DIR/.claude/settings.json"
-    echo "  ✓ Claude Code settings configured"
-fi
+def main():
+    print("=" * 50)
+    print("Backend Template Initialization (Python)")
+    print("=" * 50)
 
-if [ -f "$TEMPLATE_ROOT/CLAUDE.md" ]; then
-    cp "$TEMPLATE_ROOT/CLAUDE.md" "$REPO_DIR/CLAUDE.md"
-    echo "  ✓ Claude instructions copied"
-fi
+    # 1. Install project dependencies
+    print("\n[1/4] Installing dependencies...")
+    if (REPO_DIR / "package.json").exists():
+        subprocess.run(["npm", "install"], cwd=REPO_DIR, check=True)
+    elif (REPO_DIR / "requirements.txt").exists():
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                      cwd=REPO_DIR, check=True)
+    print("  ✓ Dependencies installed")
 
-if [ -f "$TEMPLATE_ROOT/agent.md" ]; then
-    cp "$TEMPLATE_ROOT/agent.md" "$REPO_DIR/.claude/agent.md"
-    echo "  ✓ Agent system prompt configured"
-fi
+    # 2. Configure Claude Code settings
+    print("\n[2/4] Configuring Claude Code...")
+    claude_dir = REPO_DIR / ".claude"
+    claude_dir.mkdir(exist_ok=True)
 
-# Note: Claude Code plugins from template should be referenced
-# via marketplace URLs in .claude/settings.json, not copied locally
-# Plugins are automatically installed to ~/.claude/plugins/marketplaces/
-# when Claude Code starts with the project
+    # Copy settings.json if exists
+    settings_file = TEMPLATE_ROOT / "settings.json"
+    if settings_file.exists():
+        shutil.copy(settings_file, claude_dir / "settings.json")
+        print("  ✓ Claude Code settings configured")
 
-# 3. Verify environment
-echo "[3/4] Verifying environment..."
-node --version
-npm --version
-claude --version
+    # Copy CLAUDE.md to project root
+    claude_md = TEMPLATE_ROOT / "CLAUDE.md"
+    if claude_md.exists():
+        shutil.copy(claude_md, REPO_DIR / "CLAUDE.md")
+        print("  ✓ Claude instructions copied")
 
-# 4. Export agent prompt location for execute.sh
-echo "[4/4] Setting up agent configuration..."
-if [ -f "$REPO_DIR/.claude/agent.md" ]; then
-    export AGENT_PROMPT_FILE="$REPO_DIR/.claude/agent.md"
-    echo "  ✓ Agent prompt file: $AGENT_PROMPT_FILE"
-fi
+    # Copy agent.md for system prompt
+    agent_md = TEMPLATE_ROOT / "agent.md"
+    if agent_md.exists():
+        shutil.copy(agent_md, claude_dir / "agent.md")
+        print("  ✓ Agent system prompt configured")
 
-echo "==================================="
-echo "Initialization Complete"
-echo "Note: Claude Code will auto-install plugins from .claude/settings.json"
-echo "==================================="
+    # 3. List discovered plugins (SDK will load them directly)
+    print("\n[3/4] Discovered plugins (will be loaded by SDK)...")
+    plugins_dir = TEMPLATE_ROOT / "plugins"
+    if plugins_dir.exists():
+        for plugin in plugins_dir.iterdir():
+            if plugin.is_dir() and (plugin / ".claude-plugin").exists():
+                print(f"  → {plugin.name}")
+    else:
+        print("  (no plugins directory)")
+
+    # 4. Verify environment
+    print("\n[4/4] Verifying environment...")
+    subprocess.run(["python3", "--version"], check=True)
+
+    print("\n" + "=" * 50)
+    print("Initialization Complete")
+    print("Plugins will be loaded directly by Claude Agent SDK")
+    print("=" * 50)
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 **Example Agent System Prompt (`agent.md`):**
@@ -939,58 +1200,68 @@ Based on [Claude Code plugin documentation](https://code.claude.com/docs/en/plug
 ## FR-6: Commit changes
 **Requirement:** Agent commits all changes (excluding template files) with descriptive message
 
-### Implementation
+### Implementation (Python)
 
-```bash
-# docker/execute.sh (continued)
+```python
+# docker/execute.py (continued)
 
-# ============================================
-# FR-6: Commit Changes
-# ============================================
+def commit_changes() -> str:
+    """
+    FR-6: Commit all changes with descriptive message.
 
-echo "[$(date)] Committing changes"
+    Excludes template files and follows Conventional Commits format.
 
-cd "$REPO_DIR"
+    Returns:
+        The commit SHA
 
-# Check if there are any changes
-if git diff --quiet && git diff --cached --quiet; then
-    echo "[WARNING] No changes detected, skipping commit"
-    # Still write result.json for consistency
-    COMMIT_SHA=$(git rev-parse HEAD)
-else
+    Raises:
+        GitError: If commit fails
+    """
+    logger.info("Committing changes")
+
+    # Check if there are any changes
+    diff_result = run_git("diff", "--quiet", check=False)
+    cached_result = run_git("diff", "--cached", "--quiet", check=False)
+
+    if diff_result.returncode == 0 and cached_result.returncode == 0:
+        logger.warning("No changes detected, skipping commit")
+        return run_git("rev-parse", "HEAD").stdout.strip()
+
     # Stage all changes
-    git add -A
+    run_git("add", "-A")
 
     # Exclude .claude-templates if it was modified
-    # (Templates should not be committed by the agent)
-    git reset -- .claude-templates/ 2>/dev/null || true
+    # Templates should not be committed by the agent
+    try:
+        run_git("reset", "--", ".claude-templates/", check=False)
+    except GitError:
+        pass  # Directory might not exist
 
-    # Generate commit message
-    # Truncate task description to 72 chars (git best practice)
-    COMMIT_MSG_PREFIX="feat"  # Could be dynamic based on task type
-    COMMIT_MSG_SUBJECT="${TASK_DESCRIPTION:0:72}"
+    # Generate commit message following Conventional Commits
+    commit_prefix = "feat"  # Could be dynamic based on task analysis
+    commit_subject = TASK_DESCRIPTION[:72]  # Truncate to 72 chars
 
-    COMMIT_MSG="${COMMIT_MSG_PREFIX}: ${COMMIT_MSG_SUBJECT}
+    commit_message = f"""{commit_prefix}: {commit_subject}
 
 Automated commit by Coding Agents Platform
-Task ID: ${TASK_ID}
-Base branch: ${BASE_BRANCH}
-"
+Task ID: {TASK_ID}
+Base branch: {BASE_BRANCH}
+"""
 
     # Commit changes
-    git commit -m "$COMMIT_MSG"
+    run_git("commit", "-m", commit_message)
 
-    COMMIT_SHA=$(git rev-parse HEAD)
+    commit_sha = run_git("rev-parse", "HEAD").stdout.strip()
+    logger.info(f"Changes committed: {commit_sha}")
 
-    echo "[$(date)] Changes committed: $COMMIT_SHA"
-fi
+    return commit_sha
 ```
 
 **Key Details:**
 
 1. **Change Detection:**
    - Check for changes before committing: `git diff --quiet`
-   - If no changes, skip commit but still succeed
+   - If no changes, skip commit but return current HEAD
 
 2. **Staging:**
    - `git add -A`: Stage all changes (new, modified, deleted)
@@ -1009,30 +1280,52 @@ fi
 ## FR-7: Push to remote
 **Requirement:** Agent pushes feature branch to GitHub
 
-### Implementation
+### Implementation (Python)
 
-```bash
-# docker/execute.sh (continued)
+```python
+# docker/execute.py (continued)
 
-# ============================================
-# FR-7: Push to Remote
-# ============================================
+def push_to_remote() -> None:
+    """
+    FR-7: Push feature branch to remote.
 
-echo "[$(date)] Pushing branch to remote: $NEW_BRANCH"
+    Uses upstream tracking for future operations.
 
-cd "$REPO_DIR"
+    Raises:
+        GitError: If push fails
+    """
+    logger.info(f"Pushing branch to remote: {NEW_BRANCH}")
 
-# Push with -u to set upstream tracking
-git push -u origin "$NEW_BRANCH"
+    # Push with -u to set upstream tracking
+    run_git("push", "-u", "origin", NEW_BRANCH)
 
-PUSH_EXIT_CODE=$?
+    logger.info("Branch pushed successfully")
 
-if [ $PUSH_EXIT_CODE -ne 0 ]; then
-    echo "[ERROR] Git push failed with exit code $PUSH_EXIT_CODE"
-    exit $PUSH_EXIT_CODE
-fi
 
-echo "[$(date)] Branch pushed successfully"
+def write_result(commit_sha: str, success: bool = True, error: Optional[str] = None) -> None:
+    """
+    Write execution result to JSON file.
+
+    Args:
+        commit_sha: The commit SHA
+        success: Whether execution succeeded
+        error: Error message if failed
+    """
+    result = {
+        "success": success,
+        "task_id": TASK_ID,
+        "repo": REPO_URL,
+        "branch": NEW_BRANCH,
+        "commit_sha": commit_sha,
+        "completed_at": datetime.now().isoformat(),
+    }
+
+    if error:
+        result["error"] = error
+
+    result_file = WORKSPACE_DIR / "result.json"
+    result_file.write_text(json.dumps(result, indent=2))
+    logger.info(f"Result written to {result_file}")
 ```
 
 **Key Details:**
@@ -1046,8 +1339,8 @@ echo "[$(date)] Branch pushed successfully"
    - Allows future pulls/pushes without specifying remote
 
 3. **Error Handling:**
-   - Exit code != 0 → fail the task
-   - Common errors: permission denied, network timeout
+   - `GitError` exception raised on failure
+   - Detailed error messages for debugging
 
 ---
 
@@ -2142,224 +2435,437 @@ aws logs filter-log-events \
 
 # Complete Code Examples
 
-## Full Execution Script
+## Full Execution Script (Python + Claude Agent SDK)
 
-```bash
-#!/bin/bash
-# docker/execute.sh - Complete end-to-end task execution
+```python
+#!/usr/bin/env python3
+"""
+docker/execute.py - Complete end-to-end task execution using Claude Agent SDK.
 
-set -e
-set -o pipefail
+This script replaces the bash execute.sh with a type-safe Python implementation
+that uses the Claude Agent SDK for programmatic Claude Code execution.
 
-# Redirect all output to log file
-exec 1> >(tee -a /workspace/execution.log)
-exec 2>&1
+Key Benefits:
+- Direct plugin loading by path (no copying/installation)
+- Type-safe Claude Agent SDK integration
+- Better error handling with custom exceptions
+- Structured logging
+- Testable with pytest
+- Custom hooks for permission control
 
-# Logging functions
-log_info() { echo "[$(date -Iseconds)] [INFO] $1"; }
-log_error() { echo "[$(date -Iseconds)] [ERROR] $1" >&2; }
-log_warn() { echo "[$(date -Iseconds)] [WARN] $1"; }
+Requirements:
+    pip install claude-agent-sdk
 
-# Trap for graceful shutdown
-cleanup() {
-    log_info "Cleanup triggered"
-    cd "$REPO_DIR" 2>/dev/null || true
-    git status > /workspace/cleanup_state.txt 2>&1 || true
-}
-trap cleanup EXIT
-trap 'log_warn "Received SIGTERM"; cleanup; exit 143' TERM
+Usage:
+    python3 /docker/execute.py
+"""
 
-# Validate required environment variables
-: "${TASK_ID:?Required env var TASK_ID not set}"
-: "${REPO_URL:?Required env var REPO_URL not set}"
-: "${TASK_DESCRIPTION:?Required env var TASK_DESCRIPTION not set}"
-: "${BASE_BRANCH:?Required env var BASE_BRANCH not set}"
-: "${NEW_BRANCH:?Required env var NEW_BRANCH not set}"
-: "${GITHUB_TOKEN:?Required env var GITHUB_TOKEN not set}"
-: "${ANTHROPIC_API_KEY:?Required env var ANTHROPIC_API_KEY not set}"
+import asyncio
+import os
+import sys
+import json
+import subprocess
+import signal
+import logging
+import time
+import atexit
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Dict, Any, List
 
-TASK_TEMPLATE="${TASK_TEMPLATE:-default}"
-WORKSPACE_DIR="/workspace"
-REPO_DIR="$WORKSPACE_DIR/repo"
-
-log_info "=========================================="
-log_info "Task Execution Started"
-log_info "Task ID: $TASK_ID"
-log_info "Repository: $REPO_URL"
-log_info "Base Branch: $BASE_BRANCH"
-log_info "New Branch: $NEW_BRANCH"
-log_info "Template: $TASK_TEMPLATE"
-log_info "=========================================="
+from claude_agent_sdk import query, ClaudeAgentOptions
 
 # ============================================
-# Step 1: Clone Repository (FR-3)
+# Configuration & Logging
 # ============================================
 
-log_info "Step 1: Cloning repository"
+WORKSPACE_DIR = Path("/workspace")
+REPO_DIR = WORKSPACE_DIR / "repo"
+LOG_FILE = WORKSPACE_DIR / "execution.log"
 
-if [[ "$REPO_URL" == github.com/* ]]; then
-    CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@${REPO_URL}.git"
-elif [[ "$REPO_URL" == gitlab.com/* ]]; then
-    CLONE_URL="https://oauth2:${GITHUB_TOKEN}@${REPO_URL}.git"
-else
-    log_error "Unsupported git provider: $REPO_URL"
-    exit 1
-fi
+# Ensure workspace exists
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
-git clone --depth 1 --branch "$BASE_BRANCH" "$CLONE_URL" "$REPO_DIR"
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(LOG_FILE)
+    ]
+)
+logger = logging.getLogger(__name__)
 
-cd "$REPO_DIR"
-
-git config user.name "Coding Agent"
-git config user.email "agent@coding-agents-platform.com"
-
-log_info "Repository cloned successfully"
-
-# ============================================
-# Step 2: Create Feature Branch (FR-4)
-# ============================================
-
-log_info "Step 2: Creating feature branch"
-
-if git ls-remote --heads origin "$NEW_BRANCH" | grep -q "$NEW_BRANCH"; then
-    log_warn "Branch $NEW_BRANCH already exists remotely"
-    TIMESTAMP=$(date +%s)
-    NEW_BRANCH="${NEW_BRANCH}-${TIMESTAMP}"
-    log_info "Using unique branch name: $NEW_BRANCH"
-fi
-
-git checkout -b "$NEW_BRANCH"
-
-log_info "Feature branch created: $NEW_BRANCH"
 
 # ============================================
-# Step 3: Initialize Template (FR-5, FR-9)
+# Environment Variables
 # ============================================
 
-log_info "Step 3: Initializing template"
+def get_required_env(name: str) -> str:
+    """Get required environment variable or raise error."""
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(f"Required environment variable {name} not set")
+    return value
 
-# Check if template has initialization script
-TEMPLATE_INIT_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/scripts/init.sh"
 
-if [ -f "$TEMPLATE_INIT_SCRIPT" ]; then
-    log_info "Running template initialization: $TEMPLATE_INIT_SCRIPT"
+TASK_ID = get_required_env("TASK_ID")
+REPO_URL = get_required_env("REPO_URL")
+TASK_DESCRIPTION = get_required_env("TASK_DESCRIPTION")
+BASE_BRANCH = get_required_env("BASE_BRANCH")
+NEW_BRANCH_ORIGINAL = get_required_env("NEW_BRANCH")
+GITHUB_TOKEN = get_required_env("GITHUB_TOKEN")
+ANTHROPIC_API_KEY = get_required_env("ANTHROPIC_API_KEY")
+TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "default")
 
-    # Make executable
-    chmod +x "$TEMPLATE_INIT_SCRIPT"
+# Mutable - may be modified if branch exists
+NEW_BRANCH = NEW_BRANCH_ORIGINAL
 
-    # Execute template initialization (installs plugins, dependencies, etc.)
-    bash "$TEMPLATE_INIT_SCRIPT"
-    INIT_EXIT_CODE=$?
-
-    if [ $INIT_EXIT_CODE -ne 0 ]; then
-        log_error "Template initialization failed with exit code $INIT_EXIT_CODE"
-        echo '{"success": false, "error": "Template initialization failed"}' > /workspace/result.json
-        exit $INIT_EXIT_CODE
-    fi
-
-    log_info "Template initialized successfully"
-else
-    log_info "No template initialization script found, skipping"
-fi
 
 # ============================================
-# Step 4: Execute Claude Code (FR-5)
+# Custom Exceptions
 # ============================================
 
-log_info "Step 4: Executing Claude Code"
+class TaskExecutionError(Exception):
+    """Base exception for task execution errors."""
+    pass
 
-claude \
-    --print \
-    --dangerously-skip-permissions \
-    "$TASK_DESCRIPTION"
 
-CLAUDE_EXIT_CODE=$?
+class GitError(TaskExecutionError):
+    """Git operation failed."""
+    pass
 
-if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    log_error "Claude Code failed with exit code $CLAUDE_EXIT_CODE"
-    echo '{"success": false, "error": "Claude Code execution failed"}' > /workspace/result.json
-    exit $CLAUDE_EXIT_CODE
-fi
 
-log_info "Claude Code execution completed successfully"
+class ClaudeCodeError(TaskExecutionError):
+    """Claude Code execution failed."""
+    pass
+
+
+class TemplateInitError(TaskExecutionError):
+    """Template initialization failed."""
+    pass
+
 
 # ============================================
-# Step 5: Commit Changes (FR-6)
+# Cleanup Handler
 # ============================================
 
-log_info "Step 5: Committing changes"
+def cleanup():
+    """Graceful cleanup on exit."""
+    logger.info("Cleanup triggered")
+    try:
+        if REPO_DIR.exists():
+            result = subprocess.run(
+                ["git", "status"],
+                cwd=REPO_DIR,
+                capture_output=True,
+                text=True
+            )
+            (WORKSPACE_DIR / "cleanup_state.txt").write_text(result.stdout + result.stderr)
+    except Exception as e:
+        logger.warning(f"Cleanup failed: {e}")
 
-if git diff --quiet && git diff --cached --quiet; then
-    log_warn "No changes detected, skipping commit"
-    COMMIT_SHA=$(git rev-parse HEAD)
-else
-    git add -A
 
-    # Exclude .claude-templates if modified
-    git reset -- .claude-templates/ 2>/dev/null || true
+atexit.register(cleanup)
 
-    COMMIT_MSG_PREFIX="feat"
-    COMMIT_MSG_SUBJECT="${TASK_DESCRIPTION:0:72}"
 
-    COMMIT_MSG="${COMMIT_MSG_PREFIX}: ${COMMIT_MSG_SUBJECT}
+def handle_sigterm(signum, frame):
+    """Handle SIGTERM for graceful shutdown."""
+    logger.warning("Received SIGTERM")
+    cleanup()
+    sys.exit(143)
+
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+
+
+# ============================================
+# Git Operations
+# ============================================
+
+def run_git(*args, check: bool = True, cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
+    """Run git command with proper error handling."""
+    result = subprocess.run(
+        ["git"] + list(args),
+        cwd=cwd or REPO_DIR,
+        capture_output=True,
+        text=True,
+    )
+    if check and result.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed: {result.stderr}")
+    return result
+
+
+def clone_repository() -> None:
+    """FR-3: Clone repository using provided GitHub token."""
+    global REPO_DIR
+    logger.info(f"Step 1: Cloning repository: {REPO_URL}")
+
+    # Construct authenticated clone URL
+    if REPO_URL.startswith("github.com/"):
+        clone_url = f"https://x-access-token:{GITHUB_TOKEN}@{REPO_URL}.git"
+    elif REPO_URL.startswith("gitlab.com/"):
+        clone_url = f"https://oauth2:{GITHUB_TOKEN}@{REPO_URL}.git"
+    elif REPO_URL.startswith("bitbucket.org/"):
+        clone_url = f"https://x-token-auth:{GITHUB_TOKEN}@{REPO_URL}.git"
+    else:
+        raise GitError(f"Unsupported git provider: {REPO_URL}")
+
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", "--branch", BASE_BRANCH, clone_url, str(REPO_DIR)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise GitError(f"Clone failed: {result.stderr}")
+
+    run_git("config", "user.name", "Coding Agent")
+    run_git("config", "user.email", "agent@coding-agents-platform.com")
+    logger.info("Repository cloned successfully")
+
+
+def create_feature_branch() -> str:
+    """FR-4: Create feature branch from base branch."""
+    global NEW_BRANCH
+    logger.info(f"Step 2: Creating feature branch: {NEW_BRANCH}")
+
+    result = run_git("ls-remote", "--heads", "origin", NEW_BRANCH, check=False)
+    if NEW_BRANCH in result.stdout:
+        logger.warning(f"Branch {NEW_BRANCH} already exists remotely")
+        timestamp = int(time.time())
+        NEW_BRANCH = f"{NEW_BRANCH_ORIGINAL}-{timestamp}"
+        logger.info(f"Using unique branch name: {NEW_BRANCH}")
+
+    run_git("checkout", "-b", NEW_BRANCH)
+    logger.info(f"Feature branch created: {NEW_BRANCH}")
+    return NEW_BRANCH
+
+
+# ============================================
+# Plugin Discovery (Direct Loading)
+# ============================================
+
+def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
+    """
+    Discover plugins in template directory.
+
+    The Claude Agent SDK loads plugins DIRECTLY by path -
+    no copying or marketplace installation needed!
+    """
+    plugins = []
+    plugins_dir = template_dir / "plugins"
+
+    if plugins_dir.exists():
+        for plugin_path in plugins_dir.iterdir():
+            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
+                logger.info(f"  → Discovered plugin: {plugin_path.name}")
+                plugins.append({
+                    "type": "local",
+                    "path": str(plugin_path)
+                })
+
+    return plugins
+
+
+# ============================================
+# Template Initialization
+# ============================================
+
+def run_template_init(template_dir: Path) -> None:
+    """Run template initialization script."""
+    init_py = template_dir / "scripts" / "init.py"
+    init_sh = template_dir / "scripts" / "init.sh"
+
+    if init_py.exists():
+        logger.info(f"Running Python init: {init_py}")
+        result = subprocess.run(
+            [sys.executable, str(init_py)],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
+        )
+        if result.returncode != 0:
+            raise TemplateInitError(f"Init failed: {result.stderr}")
+    elif init_sh.exists():
+        logger.info(f"Running bash init: {init_sh}")
+        result = subprocess.run(
+            ["bash", str(init_sh)],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
+        )
+        if result.returncode != 0:
+            raise TemplateInitError(f"Init failed: {result.stderr}")
+
+
+def load_system_prompt(template_dir: Path) -> Optional[str]:
+    """Load system prompt from agent.md if exists."""
+    for path in [template_dir / "agent.md", REPO_DIR / ".claude" / "agent.md"]:
+        if path.exists():
+            logger.info(f"Loading system prompt from: {path}")
+            return path.read_text()
+    return None
+
+
+# ============================================
+# Claude Code Execution (Agent SDK)
+# ============================================
+
+async def execute_claude_code(task_description: str) -> None:
+    """
+    FR-5: Execute Claude Code using the Agent SDK.
+
+    Key advantage: Plugins are loaded DIRECTLY by path without copying!
+    """
+    logger.info("Step 4: Executing Claude Code via Agent SDK")
+
+    template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
+
+    # Run template initialization
+    if template_dir.exists():
+        logger.info("Step 3: Initializing template")
+        run_template_init(template_dir)
+        logger.info("Template initialized successfully")
+    else:
+        logger.info("Step 3: No template found, skipping initialization")
+
+    # Discover plugins - SDK loads them DIRECTLY by path
+    plugins = discover_plugins(template_dir)
+    logger.info(f"Loading {len(plugins)} plugins directly (no copying needed)")
+
+    # Build SDK options
+    options = ClaudeAgentOptions(
+        cwd=str(REPO_DIR),
+        permission_mode='acceptEdits',  # Replaces --dangerously-skip-permissions
+        allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch"],
+        plugins=plugins,  # Direct path loading!
+        system_prompt=load_system_prompt(template_dir),
+        add_dirs=[str(REPO_DIR)],
+    )
+
+    # Execute and stream responses
+    try:
+        async for message in query(prompt=task_description, options=options):
+            if hasattr(message, 'content'):
+                for block in message.content:
+                    if hasattr(block, 'text'):
+                        print(block.text)
+        logger.info("Claude Code execution completed successfully")
+    except Exception as e:
+        raise ClaudeCodeError(f"Claude Code failed: {str(e)}")
+
+
+# ============================================
+# Git Commit & Push
+# ============================================
+
+def commit_changes() -> str:
+    """FR-6: Commit all changes with descriptive message."""
+    logger.info("Step 5: Committing changes")
+
+    diff_result = run_git("diff", "--quiet", check=False)
+    cached_result = run_git("diff", "--cached", "--quiet", check=False)
+
+    if diff_result.returncode == 0 and cached_result.returncode == 0:
+        logger.warning("No changes detected, skipping commit")
+        return run_git("rev-parse", "HEAD").stdout.strip()
+
+    run_git("add", "-A")
+    run_git("reset", "--", ".claude-templates/", check=False)
+
+    commit_message = f"""feat: {TASK_DESCRIPTION[:72]}
 
 Automated commit by Coding Agents Platform
-Task ID: ${TASK_ID}
-Base branch: ${BASE_BRANCH}
-"
+Task ID: {TASK_ID}
+Base branch: {BASE_BRANCH}
+"""
+    run_git("commit", "-m", commit_message)
 
-    git commit -m "$COMMIT_MSG"
+    commit_sha = run_git("rev-parse", "HEAD").stdout.strip()
+    logger.info(f"Changes committed: {commit_sha}")
+    return commit_sha
 
-    COMMIT_SHA=$(git rev-parse HEAD)
 
-    log_info "Changes committed: $COMMIT_SHA"
-fi
+def push_to_remote() -> None:
+    """FR-7: Push feature branch to remote."""
+    logger.info("Step 6: Pushing to remote")
+    run_git("push", "-u", "origin", NEW_BRANCH)
+    logger.info("Branch pushed successfully")
+
+
+def write_result(commit_sha: str, success: bool = True, error: Optional[str] = None) -> None:
+    """Write execution result to JSON file."""
+    logger.info("Step 7: Writing result")
+    result = {
+        "success": success,
+        "task_id": TASK_ID,
+        "repo": REPO_URL,
+        "branch": NEW_BRANCH,
+        "commit_sha": commit_sha,
+        "completed_at": datetime.now().isoformat(),
+    }
+    if error:
+        result["error"] = error
+
+    (WORKSPACE_DIR / "result.json").write_text(json.dumps(result, indent=2))
+
 
 # ============================================
-# Step 6: Push to Remote (FR-7)
+# Main Entry Point
 # ============================================
 
-log_info "Step 6: Pushing to remote"
+async def main():
+    """Main execution flow."""
+    logger.info("=" * 50)
+    logger.info("Task Execution Started")
+    logger.info(f"Task ID: {TASK_ID}")
+    logger.info(f"Repository: {REPO_URL}")
+    logger.info(f"Base Branch: {BASE_BRANCH}")
+    logger.info(f"New Branch: {NEW_BRANCH}")
+    logger.info(f"Template: {TASK_TEMPLATE}")
+    logger.info("=" * 50)
 
-git push -u origin "$NEW_BRANCH"
+    commit_sha = ""
+    try:
+        # FR-3: Clone repository
+        clone_repository()
 
-PUSH_EXIT_CODE=$?
+        # FR-4: Create feature branch
+        create_feature_branch()
 
-if [ $PUSH_EXIT_CODE -ne 0 ]; then
-    log_error "Git push failed with exit code $PUSH_EXIT_CODE"
-    echo '{"success": false, "error": "Git push failed"}' > /workspace/result.json
-    exit $PUSH_EXIT_CODE
-fi
+        # FR-5: Execute Claude Code (with plugin discovery)
+        await execute_claude_code(TASK_DESCRIPTION)
 
-log_info "Branch pushed successfully"
+        # FR-6: Commit changes
+        commit_sha = commit_changes()
 
-# ============================================
-# Step 7: Write Result
-# ============================================
+        # FR-7: Push to remote
+        push_to_remote()
 
-log_info "Step 7: Writing result"
+        # Write success result
+        write_result(commit_sha, success=True)
 
-cat > /workspace/result.json <<EOF
-{
-  "success": true,
-  "commit_sha": "$COMMIT_SHA",
-  "branch": "$NEW_BRANCH",
-  "repo": "$REPO_URL",
-  "task_id": "$TASK_ID",
-  "completed_at": "$(date -Iseconds)"
-}
-EOF
+        logger.info("=" * 50)
+        logger.info("Task Execution Completed Successfully")
+        logger.info(f"Commit: {commit_sha}")
+        logger.info(f"Branch: {NEW_BRANCH}")
+        logger.info("=" * 50)
 
-log_info "=========================================="
-log_info "Task Execution Completed Successfully"
-log_info "Commit: $COMMIT_SHA"
-log_info "Branch: $NEW_BRANCH"
-log_info "=========================================="
+    except TaskExecutionError as e:
+        logger.error(f"Task failed: {e}")
+        write_result(commit_sha or "none", success=False, error=str(e))
+        sys.exit(1)
 
-exit 0
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-## Complete SandboxTemplate
+## Complete SandboxTemplate (Updated for Python)
 
 ```yaml
 # k8s/sandbox-template.yaml
@@ -2403,7 +2909,8 @@ spec:
       - name: agent
         image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/claude-code-agent:v1.0.0
 
-        command: ["/docker/execute.sh"]
+        # UPDATED: Use Python script instead of bash
+        command: ["python3", "/docker/execute.py"]
 
         # Environment variables (task-specific values injected by SandboxClaim)
         env:
@@ -2462,6 +2969,41 @@ spec:
       - name: cache
         emptyDir:
           sizeLimit: 1Gi
+```
+
+## Dockerfile (Updated for Python + Claude Agent SDK)
+
+```dockerfile
+# docker/Dockerfile
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (for npm-based projects)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Agent SDK
+RUN pip install --no-cache-dir claude-agent-sdk
+
+# Copy execution script
+COPY execute.py /docker/execute.py
+RUN chmod +x /docker/execute.py
+
+# Create non-root user
+RUN useradd -m -u 1000 agent
+USER agent
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["python3", "/docker/execute.py"]
 ```
 
 ## Complete API Server
@@ -2678,26 +3220,30 @@ async def metrics():
 ┌────────────────────────────────────────────────────────────────────────┐
 │  SANDBOX POD (gVisor isolated)                                          │
 │  ──────────────────────────────                                         │
-│  Entrypoint: /docker/execute.sh                                         │
+│  Entrypoint: python3 /docker/execute.py                                 │
 │                                                                          │
 │  STEP 1: Clone Repo (FR-3)                                              │
-│    git clone https://${GITHUB_TOKEN}@${REPO_URL} /workspace/repo        │
+│    clone_repository() → git clone with authenticated URL                │
 │                                                                          │
 │  STEP 2: Create Branch (FR-4)                                           │
-│    git checkout -b ${NEW_BRANCH}                                        │
+│    create_feature_branch() → git checkout -b ${NEW_BRANCH}              │
 │                                                                          │
-│  STEP 3: Execute Claude Code (FR-5)                                     │
-│    claude --print --dangerously-skip-permissions "${TASK_DESCRIPTION}"  │
+│  STEP 3: Initialize Template (FR-9)                                     │
+│    run_template_init() → Install dependencies, configure settings       │
 │                                                                          │
-│  STEP 4: Commit Changes (FR-6)                                          │
-│    git add -A                                                           │
-│    git commit -m "feat: ${TASK_DESCRIPTION}"                            │
+│  STEP 4: Execute Claude Code (FR-5) - USING AGENT SDK                   │
+│    await execute_claude_code() →                                        │
+│      - Discover plugins by path (no copying!)                           │
+│      - query(prompt, ClaudeAgentOptions(plugins=[...]))                 │
 │                                                                          │
-│  STEP 5: Push Branch (FR-7)                                             │
-│    git push -u origin ${NEW_BRANCH}                                     │
+│  STEP 5: Commit Changes (FR-6)                                          │
+│    commit_changes() → git add -A && git commit                          │
 │                                                                          │
-│  STEP 6: Write Result                                                   │
-│    echo '{ commit_sha, branch }' > /workspace/result.json               │
+│  STEP 6: Push Branch (FR-7)                                             │
+│    push_to_remote() → git push -u origin ${NEW_BRANCH}                  │
+│                                                                          │
+│  STEP 7: Write Result                                                   │
+│    write_result() → /workspace/result.json                              │
 │                                                                          │
 │  Exit code 0 → Success                                                  │
 └────────────────────────────────────────────────────────────────────────┘
@@ -2734,13 +3280,13 @@ async def metrics():
 
 ## Summary
 
-This implementation guide provides complete low-level details for implementing the Coding Agents Platform MVP using Kubernetes Agent Sandbox:
+This implementation guide provides complete low-level details for implementing the Coding Agents Platform MVP using Kubernetes Agent Sandbox with **Python + Claude Agent SDK**:
 
 ✅ **All 10 Functional Requirements (FR-1 to FR-10)** covered with:
-- Complete code examples
+- Complete Python code examples (using `claude-agent-sdk`)
 - Kubernetes manifests
-- Bash execution scripts
-- Error handling
+- Type-safe execution script (`execute.py`)
+- Custom exception handling
 
 ✅ **All 6 Non-Functional Requirements (NFR-1 to NFR-6)** covered with:
 - Performance optimizations (pre-warmed pools, sub-500ms API)
@@ -2748,11 +3294,38 @@ This implementation guide provides complete low-level details for implementing t
 - Isolation strategies (gVisor, NetworkPolicy)
 - Observability (structured logs, metrics, events)
 
+**Key Benefits of Python + Claude Agent SDK over Bash:**
+
+| Aspect | Bash (Old) | Python + SDK (New) |
+|--------|-----------|-------------------|
+| Claude Code invocation | `claude --print --dangerously-skip-permissions` | `query(prompt, ClaudeAgentOptions(...))` |
+| Plugin loading | Copy files + marketplace install | **Direct path loading** (no copying!) |
+| Permission control | `--dangerously-skip-permissions` flag | `permission_mode='acceptEdits'` + custom hooks |
+| Error handling | Exit codes, `set -e` | Custom exceptions (`GitError`, `ClaudeCodeError`) |
+| Type safety | None | Full Python typing |
+| Testing | Difficult | pytest + mocking |
+| Output handling | Pipe to file | Async iteration, structured messages |
+
 **Key Benefits over Custom Docker:**
 - 50% less code to maintain (100-200 LOC vs 500-800 LOC)
 - Built-in orchestration (no custom spawning logic)
 - Superior isolation (gVisor kernel filtering)
 - Sub-second startup (pre-warmed pools)
 - Production-grade monitoring (K8s events, metrics)
+
+**Direct Plugin Loading (No Copying Required):**
+
+```python
+# Plugins are loaded directly by path - no installation needed!
+plugins = discover_plugins(template_dir)  # Returns [{"type": "local", "path": "..."}]
+
+options = ClaudeAgentOptions(
+    plugins=plugins,  # SDK loads directly from filesystem
+    permission_mode='acceptEdits',
+)
+
+async for message in query(prompt=task, options=options):
+    print(message)
+```
 
 **Ready to implement** - all code samples are production-ready with proper error handling, logging, and security best practices.
