@@ -594,6 +594,8 @@ echo "[$(date)] Feature branch created: $NEW_BRANCH"
 
 ### Implementation
 
+Templates define their own execution logic via an `execute.sh` script.
+
 ```bash
 # docker/execute.sh (continued)
 
@@ -606,42 +608,112 @@ echo "[$(date)] Executing Claude Code with task: $TASK_DESCRIPTION"
 # Claude Code expects to be in the repo directory
 cd "$REPO_DIR"
 
-# Run Claude Code with:
-# --print: Print all output (no interactive mode)
-# --dangerously-skip-permissions: Skip permission prompts (for autonomous operation)
-# --no-confirm: Don't ask for confirmation
-# Task description passed as single argument
+# Check if template has custom execution script
+TEMPLATE_EXECUTE_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/execute.sh"
 
+if [ -f "$TEMPLATE_EXECUTE_SCRIPT" ]; then
+    echo "[$(date)] Using template execution script: $TEMPLATE_EXECUTE_SCRIPT"
+
+    # Make executable
+    chmod +x "$TEMPLATE_EXECUTE_SCRIPT"
+
+    # Execute template-specific script
+    # Template script has access to all environment variables
+    bash "$TEMPLATE_EXECUTE_SCRIPT"
+    CLAUDE_EXIT_CODE=$?
+else
+    echo "[$(date)] No template script found, using default Claude Code execution"
+
+    # Fallback to default execution
+    claude \
+        --print \
+        --dangerously-skip-permissions \
+        "$TASK_DESCRIPTION"
+
+    CLAUDE_EXIT_CODE=$?
+fi
+
+if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
+    echo "[ERROR] Execution failed with exit code $CLAUDE_EXIT_CODE"
+    exit $CLAUDE_EXIT_CODE
+fi
+
+echo "[$(date)] Execution completed successfully"
+```
+
+**Template Structure:**
+
+```bash
+# Example: .claude-templates/backend/execute.sh
+#!/bin/bash
+set -e
+
+# Template-specific execution script
+# Has access to all environment variables:
+# - TASK_DESCRIPTION
+# - ANTHROPIC_API_KEY
+# - REPO_DIR
+# - etc.
+
+echo "Running backend template execution"
+
+# Optional: Pre-processing
+# - Install dependencies
+# - Run linters
+# - Setup environment
+
+# Run Claude Code with template-specific flags
 claude \
     --print \
     --dangerously-skip-permissions \
     "$TASK_DESCRIPTION"
 
-CLAUDE_EXIT_CODE=$?
-
-if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    echo "[ERROR] Claude Code failed with exit code $CLAUDE_EXIT_CODE"
-    exit $CLAUDE_EXIT_CODE
-fi
-
-echo "[$(date)] Claude Code execution completed successfully"
+# Optional: Post-processing
+# - Run tests
+# - Format code
+# - Generate documentation
 ```
 
 **Key Details:**
 
-1. **Claude Code Flags:**
-   - `--print`: Non-interactive mode, prints all output
-   - `--dangerously-skip-permissions`: Auto-approve all actions
-   - `--no-confirm`: Skip confirmation prompts
+1. **Template-Defined Execution:**
+   - Each template can have `.claude-templates/{template-name}/execute.sh`
+   - Script is executed from repo root directory
+   - Has access to all environment variables
+   - Can customize pre/post-processing steps
 
-2. **Template Loading:**
-   - Claude Code auto-detects `.claude-templates/` in repo root
-   - Template specified via `TASK_TEMPLATE` env var (if needed)
-   - Templates checked into target repo (not platform repo)
+2. **Default Fallback:**
+   - If no template script exists, uses default Claude Code invocation
+   - Ensures backwards compatibility
 
-3. **Environment Variables:**
-   - `ANTHROPIC_API_KEY`: Required for Claude Code
-   - `TASK_DESCRIPTION`: Passed as command argument
+3. **Common Template Scripts:**
+   ```bash
+   .claude-templates/
+   ├── backend/
+   │   ├── CLAUDE.md           # Template instructions
+   │   ├── settings.json        # Claude Code settings
+   │   ├── execute.sh          # Execution script (backend-specific)
+   │   └── hooks/              # Session hooks
+   ├── frontend/
+   │   ├── CLAUDE.md
+   │   ├── settings.json
+   │   ├── execute.sh          # Execution script (frontend-specific)
+   │   └── skills/
+   └── default/
+       ├── CLAUDE.md
+       ├── settings.json
+       └── execute.sh          # Execution script (default)
+   ```
+
+4. **Environment Variables Available to Template:**
+   - `TASK_ID`: Unique task identifier
+   - `TASK_DESCRIPTION`: User-provided task description
+   - `REPO_URL`: Repository URL
+   - `BASE_BRANCH`: Base branch name
+   - `NEW_BRANCH`: New branch name
+   - `TASK_TEMPLATE`: Template name
+   - `ANTHROPIC_API_KEY`: Claude API key
+   - `GITHUB_TOKEN`: Git authentication token
 
 ---
 
@@ -841,84 +913,138 @@ spec:
 
 ---
 
-## FR-9: Template injection
-**Requirement:** Platform copies template from `.claude-templates/{name}/` to repo root before execution
+## FR-9: Template structure
+**Requirement:** Templates define execution behavior and Claude Code configuration
 
 ### Implementation
 
-**Option 1: Templates in Target Repo (Recommended)**
-
 Templates are **checked into each target repository** at `.claude-templates/{template-name}/`.
 
+**Complete Template Structure:**
+
 ```bash
-# Structure of target repo (e.g., github.com/swiggy/order-service)
+# Target repo (e.g., github.com/swiggy/order-service)
 order-service/
 ├── src/
 ├── .claude-templates/
 │   ├── default/
-│   │   ├── CLAUDE.md
-│   │   ├── settings.json
-│   │   └── skills/
+│   │   ├── CLAUDE.md            # Instructions for Claude
+│   │   ├── settings.json        # Claude Code settings
+│   │   ├── execute.sh           # Execution script (optional)
+│   │   ├── hooks/               # Session hooks (optional)
+│   │   │   └── session-start.sh
+│   │   └── skills/              # Custom skills (optional)
 │   ├── backend/
 │   │   ├── CLAUDE.md
 │   │   ├── settings.json
+│   │   ├── execute.sh           # Backend-specific execution
 │   │   └── hooks/
+│   │       ├── pre-commit.sh    # Run tests before commit
+│   │       └── post-commit.sh
 │   └── frontend/
+│       ├── CLAUDE.md
+│       ├── settings.json
+│       ├── execute.sh           # Frontend-specific execution
+│       └── skills/
+│           └── component-generator/
 └── README.md
 ```
 
-**No platform-side injection needed** - templates already exist in repo.
+**Template Components:**
 
-**Option 2: Platform-Managed Templates (Alternative)**
-
-If templates are managed centrally by the platform:
+### 1. `execute.sh` (Execution Script)
+Defines how Claude Code is invoked and what pre/post-processing occurs.
 
 ```bash
-# docker/execute.sh (add before FR-5)
+#!/bin/bash
+# .claude-templates/backend/execute.sh
+set -e
 
-# ============================================
-# FR-9: Template Injection
-# ============================================
+echo "Backend template: Installing dependencies"
+npm install
 
-echo "[$(date)] Injecting template: $TASK_TEMPLATE"
+echo "Backend template: Running linters"
+npm run lint
 
-TEMPLATE_SOURCE="/templates/$TASK_TEMPLATE"  # Baked into container image
-TEMPLATE_DEST="$REPO_DIR"
+echo "Backend template: Executing Claude Code"
+claude \
+    --print \
+    --dangerously-skip-permissions \
+    "$TASK_DESCRIPTION"
 
-if [ -d "$TEMPLATE_SOURCE" ]; then
-    # Copy template files to repo root
-    cp -r "$TEMPLATE_SOURCE"/* "$TEMPLATE_DEST/"
+echo "Backend template: Running tests"
+npm test
 
-    # Don't commit template files (exclude in FR-6)
-    echo ".claude-templates/" >> "$REPO_DIR/.git/info/exclude"
-
-    echo "[$(date)] Template injected: $TASK_TEMPLATE"
-else
-    echo "[WARNING] Template not found: $TASK_TEMPLATE, using defaults"
-fi
+echo "Backend template: Building"
+npm run build
 ```
 
-**Dockerfile (if using platform-managed templates):**
+### 2. `CLAUDE.md` (Instructions)
+Context and instructions for Claude Code.
 
-```dockerfile
-# docker/Dockerfile
-FROM ubuntu:22.04
+```markdown
+# Backend Development Template
 
-# ... (Claude Code installation, etc.)
+## Project Context
+This is a Node.js backend service using Express and PostgreSQL.
 
-# Copy templates into container image
-COPY templates/ /templates/
+## Coding Standards
+- Use TypeScript
+- Follow Airbnb style guide
+- Write unit tests for all new functions
+- Use async/await, not callbacks
 
-# Template structure:
-# /templates/
-#   ├── default/
-#   │   ├── CLAUDE.md
-#   │   └── settings.json
-#   ├── backend/
-#   └── frontend/
+## Common Tasks
+- API endpoints go in `src/routes/`
+- Business logic in `src/services/`
+- Database models in `src/models/`
 ```
 
-**Recommendation:** Use Option 1 (templates in target repos) for MVP.
+### 3. `settings.json` (Configuration)
+Claude Code settings for this template.
+
+```json
+{
+  "preferredLanguages": ["typescript", "javascript"],
+  "testFramework": "jest",
+  "linter": "eslint",
+  "formatter": "prettier",
+  "autoFormat": true,
+  "autoTest": true
+}
+```
+
+### 4. `hooks/` (Lifecycle Hooks - Optional)
+Scripts that run during Claude Code lifecycle.
+
+```bash
+# .claude-templates/backend/hooks/session-start.sh
+#!/bin/bash
+echo "Session starting - checking environment"
+node --version
+npm --version
+```
+
+**Key Details:**
+
+1. **No Platform Injection Needed:**
+   - Templates live in target repos
+   - Cloned with repo during FR-3
+   - Selected via `TASK_TEMPLATE` environment variable
+
+2. **Template Selection:**
+   - API request specifies: `"task_template": "backend"`
+   - Platform sets: `TASK_TEMPLATE=backend`
+   - Execution script looks for: `.claude-templates/backend/execute.sh`
+
+3. **Fallback Behavior:**
+   - If template doesn't have `execute.sh`, uses default Claude Code invocation
+   - If template doesn't exist, uses `.claude-templates/default/`
+
+4. **Template Ownership:**
+   - Managed by repo teams, not platform team
+   - Teams can customize per-repo or per-use-case
+   - Version controlled with application code
 
 ---
 
@@ -1773,20 +1899,37 @@ log_info "Feature branch created: $NEW_BRANCH"
 
 log_info "Step 3: Executing Claude Code"
 
-claude \
-    --print \
-    --dangerously-skip-permissions \
-    "$TASK_DESCRIPTION"
+# Check if template has custom execution script
+TEMPLATE_EXECUTE_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/execute.sh"
 
-CLAUDE_EXIT_CODE=$?
+if [ -f "$TEMPLATE_EXECUTE_SCRIPT" ]; then
+    log_info "Using template execution script: $TEMPLATE_EXECUTE_SCRIPT"
+
+    # Make executable
+    chmod +x "$TEMPLATE_EXECUTE_SCRIPT"
+
+    # Execute template-specific script
+    bash "$TEMPLATE_EXECUTE_SCRIPT"
+    CLAUDE_EXIT_CODE=$?
+else
+    log_info "No template script found, using default Claude Code execution"
+
+    # Fallback to default execution
+    claude \
+        --print \
+        --dangerously-skip-permissions \
+        "$TASK_DESCRIPTION"
+
+    CLAUDE_EXIT_CODE=$?
+fi
 
 if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    log_error "Claude Code failed with exit code $CLAUDE_EXIT_CODE"
-    echo '{"success": false, "error": "Claude Code execution failed"}' > /workspace/result.json
+    log_error "Execution failed with exit code $CLAUDE_EXIT_CODE"
+    echo '{"success": false, "error": "Execution failed"}' > /workspace/result.json
     exit $CLAUDE_EXIT_CODE
 fi
 
-log_info "Claude Code execution completed"
+log_info "Execution completed successfully"
 
 # ============================================
 # Step 4: Commit Changes (FR-6)
