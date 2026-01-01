@@ -902,31 +902,88 @@ def _load_system_prompt(template_dir: Path) -> Optional[str]:
 └── settings.json                 # Additional settings
 ```
 
-**Key Difference: Direct Plugin Loading**
+**Key Difference: Direct Plugin Loading from Template Path**
 
-The Claude Agent SDK can load plugins directly by path, eliminating the need to copy files or install via marketplace:
+The Claude Agent SDK loads plugins **directly from `.claude-templates/{template}/plugins/`** - no copying, no installation, no marketplace required!
 
 ```python
-# OLD APPROACH (bash): Copy plugins, install via marketplace
-# cp "$TEMPLATE_ROOT/plugins/*" ~/.claude/plugins/
-# claude --plugin-dir "$PLUGIN_DIR"
+# ============================================
+# DIRECT PLUGIN LOADING FROM TEMPLATE
+# ============================================
 
-# NEW APPROACH (Python SDK): Load directly by path
+# Template structure in repository:
+# .claude-templates/backend/plugins/
+#   ├── test-runner/
+#   │   ├── .claude-plugin/plugin.json
+#   │   └── skills/run-tests/SKILL.md
+#   ├── code-quality/
+#   │   ├── .claude-plugin/plugin.json
+#   │   └── commands/lint.md
+#   └── api-generator/
+#       ├── .claude-plugin/plugin.json
+#       └── agents/api-builder.md
+
+def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
+    """
+    Discover and load ALL plugins from template/plugins directory.
+
+    The SDK loads these directly by absolute path - no copying needed!
+    """
+    plugins = []
+    plugins_dir = template_dir / "plugins"
+
+    if plugins_dir.exists():
+        for plugin_path in plugins_dir.iterdir():
+            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
+                # Direct path loading - SDK reads from this exact location
+                plugins.append({
+                    "type": "local",
+                    "path": str(plugin_path.absolute())  # e.g., /workspace/repo/.claude-templates/backend/plugins/test-runner
+                })
+
+    return plugins
+
+# Example output from discover_plugins():
+# [
+#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/test-runner"},
+#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/code-quality"},
+#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/api-generator"},
+# ]
+
+# Pass directly to ClaudeAgentOptions - SDK loads from these paths!
 options = ClaudeAgentOptions(
-    plugins=[
-        {"type": "local", "path": "./plugins/test-runner"},
-        {"type": "local", "path": "./plugins/code-quality"},
-    ]
+    plugins=discover_plugins(template_dir),  # All plugins from template
+    permission_mode='acceptEdits',
 )
 ```
 
+**Comparison: Old vs New Approach**
+
+| Aspect | Old (Bash) | New (Python SDK) |
+|--------|-----------|------------------|
+| Plugin location | Copy to `~/.claude/plugins/` | **Stay in template directory** |
+| Loading method | `claude --plugin-dir` or marketplace | `plugins=[{"type": "local", "path": "..."}]` |
+| File operations | `cp`, `mkdir`, symlinks | **None - direct path reference** |
+| Cleanup needed | Yes (remove copied files) | **No** |
+| Template isolation | Plugins shared globally | **Plugins isolated per template** |
+
 **Initialization Script (`scripts/init.py`):**
+
+Note: This script **only handles dependencies and settings** - plugins are loaded directly by the SDK from their template paths!
 
 ```python
 #!/usr/bin/env python3
 """
 Template initialization script (Python version).
-Replaces init.sh with type-safe Python implementation.
+
+IMPORTANT: This script does NOT handle plugins!
+Plugins are loaded DIRECTLY by the Claude Agent SDK from:
+  .claude-templates/{template}/plugins/
+
+This script only handles:
+  1. Project dependencies (npm install, pip install)
+  2. Claude Code settings (.claude/settings.json)
+  3. Project context files (CLAUDE.md, agent.md)
 """
 
 import os
@@ -935,7 +992,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# Get paths from environment
 REPO_DIR = Path(os.environ.get("REPO_DIR", "."))
 TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "backend")
 TEMPLATE_ROOT = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
@@ -943,58 +999,51 @@ TEMPLATE_ROOT = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
 
 def main():
     print("=" * 50)
-    print("Backend Template Initialization (Python)")
+    print("Template Initialization (Python)")
     print("=" * 50)
 
     # 1. Install project dependencies
-    print("\n[1/4] Installing dependencies...")
+    print("\n[1/3] Installing project dependencies...")
     if (REPO_DIR / "package.json").exists():
         subprocess.run(["npm", "install"], cwd=REPO_DIR, check=True)
+        print("  ✓ npm dependencies installed")
     elif (REPO_DIR / "requirements.txt").exists():
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
                       cwd=REPO_DIR, check=True)
-    print("  ✓ Dependencies installed")
+        print("  ✓ pip dependencies installed")
+    else:
+        print("  (no package.json or requirements.txt found)")
 
     # 2. Configure Claude Code settings
-    print("\n[2/4] Configuring Claude Code...")
+    print("\n[2/3] Configuring Claude Code...")
     claude_dir = REPO_DIR / ".claude"
     claude_dir.mkdir(exist_ok=True)
 
-    # Copy settings.json if exists
-    settings_file = TEMPLATE_ROOT / "settings.json"
-    if settings_file.exists():
-        shutil.copy(settings_file, claude_dir / "settings.json")
-        print("  ✓ Claude Code settings configured")
+    for src, dst, desc in [
+        (TEMPLATE_ROOT / "settings.json", claude_dir / "settings.json", "settings"),
+        (TEMPLATE_ROOT / "CLAUDE.md", REPO_DIR / "CLAUDE.md", "project context"),
+        (TEMPLATE_ROOT / "agent.md", claude_dir / "agent.md", "system prompt"),
+    ]:
+        if src.exists():
+            shutil.copy(src, dst)
+            print(f"  ✓ Copied {desc}")
 
-    # Copy CLAUDE.md to project root
-    claude_md = TEMPLATE_ROOT / "CLAUDE.md"
-    if claude_md.exists():
-        shutil.copy(claude_md, REPO_DIR / "CLAUDE.md")
-        print("  ✓ Claude instructions copied")
-
-    # Copy agent.md for system prompt
-    agent_md = TEMPLATE_ROOT / "agent.md"
-    if agent_md.exists():
-        shutil.copy(agent_md, claude_dir / "agent.md")
-        print("  ✓ Agent system prompt configured")
-
-    # 3. List discovered plugins (SDK will load them directly)
-    print("\n[3/4] Discovered plugins (will be loaded by SDK)...")
+    # 3. List plugins (for logging only - SDK loads them directly!)
+    print("\n[3/3] Plugins in template (loaded directly by SDK)...")
     plugins_dir = TEMPLATE_ROOT / "plugins"
     if plugins_dir.exists():
         for plugin in plugins_dir.iterdir():
             if plugin.is_dir() and (plugin / ".claude-plugin").exists():
-                print(f"  → {plugin.name}")
+                # Just logging - NO COPYING! SDK loads from this path directly
+                print(f"  → {plugin.name} @ {plugin}")
     else:
         print("  (no plugins directory)")
 
-    # 4. Verify environment
-    print("\n[4/4] Verifying environment...")
-    subprocess.run(["python3", "--version"], check=True)
-
     print("\n" + "=" * 50)
     print("Initialization Complete")
-    print("Plugins will be loaded directly by Claude Agent SDK")
+    print("")
+    print("NOTE: Plugins are NOT copied or installed!")
+    print("      SDK loads directly from: .claude-templates/{template}/plugins/")
     print("=" * 50)
 
 
@@ -2649,10 +2698,15 @@ def create_feature_branch() -> str:
 
 def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
     """
-    Discover plugins in template directory.
+    Discover ALL plugins from .claude-templates/{template}/plugins/ directory.
 
-    The Claude Agent SDK loads plugins DIRECTLY by path -
-    no copying or marketplace installation needed!
+    The Claude Agent SDK loads plugins DIRECTLY by absolute path -
+    no copying, no marketplace installation, no file operations needed!
+
+    Example paths returned:
+      /workspace/repo/.claude-templates/backend/plugins/test-runner
+      /workspace/repo/.claude-templates/backend/plugins/code-quality
+      /workspace/repo/.claude-templates/backend/plugins/api-generator
     """
     plugins = []
     plugins_dir = template_dir / "plugins"
@@ -2660,12 +2714,15 @@ def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
     if plugins_dir.exists():
         for plugin_path in plugins_dir.iterdir():
             if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
-                logger.info(f"  → Discovered plugin: {plugin_path.name}")
+                # Use ABSOLUTE path - SDK loads directly from this location
+                absolute_path = str(plugin_path.absolute())
+                logger.info(f"  → Plugin: {plugin_path.name} @ {absolute_path}")
                 plugins.append({
                     "type": "local",
-                    "path": str(plugin_path)
+                    "path": absolute_path
                 })
 
+    logger.info(f"  Total: {len(plugins)} plugins discovered (loaded directly, no copying)")
     return plugins
 
 
