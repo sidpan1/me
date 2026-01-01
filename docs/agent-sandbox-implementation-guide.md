@@ -632,10 +632,19 @@ fi
 
 # Run Claude Code
 echo "[$(date)] Running Claude Code"
-claude \
-    --print \
-    --dangerously-skip-permissions \
-    "$TASK_DESCRIPTION"
+
+# Build Claude Code command with optional system prompt file
+CLAUDE_CMD="claude --print --dangerously-skip-permissions"
+
+# Add system prompt file if agent.md exists
+if [ -f "$REPO_DIR/.claude/agent.md" ]; then
+    echo "[$(date)] Using agent system prompt from: $REPO_DIR/.claude/agent.md"
+    CLAUDE_CMD="$CLAUDE_CMD --system-prompt-file '$REPO_DIR/.claude/agent.md'"
+fi
+
+# Execute Claude Code
+CLAUDE_CMD="$CLAUDE_CMD '$TASK_DESCRIPTION'"
+eval $CLAUDE_CMD
 
 CLAUDE_EXIT_CODE=$?
 
@@ -654,9 +663,15 @@ echo "[$(date)] Execution completed successfully"
 .claude-templates/backend/
 ├── scripts/
 │   └── init.sh                   # Initialization script
+├── agent.md                      # Main system instructions for the agent
 ├── CLAUDE.md                     # Template instructions for Claude
 └── settings.json                 # Claude Code settings (plugin refs)
 ```
+
+**File Purposes:**
+- `agent.md`: Main system prompt defining the agent's role, behavior, and expertise (passed via `--system-prompt-file`)
+- `CLAUDE.md`: Project-specific context and instructions (automatically read by Claude Code)
+- `settings.json`: Plugin marketplace references and Claude Code settings
 
 **Note:** Based on [Claude Code documentation](https://code.claude.com/docs/en/plugins), plugins are NOT stored in template directories. Instead:
 - Plugins are referenced via marketplace URLs in `settings.json`
@@ -677,12 +692,12 @@ echo "==================================="
 TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
 
 # 1. Install project dependencies
-echo "[1/3] Installing dependencies..."
+echo "[1/4] Installing dependencies..."
 npm install
 
 # 2. Configure Claude Code settings
 # Claude Code uses .claude/settings.json in project root
-echo "[2/3] Configuring Claude Code..."
+echo "[2/4] Configuring Claude Code..."
 
 # Copy template settings to .claude/ directory
 mkdir -p "$REPO_DIR/.claude"
@@ -697,22 +712,131 @@ if [ -f "$TEMPLATE_ROOT/CLAUDE.md" ]; then
     echo "  ✓ Claude instructions copied"
 fi
 
+if [ -f "$TEMPLATE_ROOT/agent.md" ]; then
+    cp "$TEMPLATE_ROOT/agent.md" "$REPO_DIR/.claude/agent.md"
+    echo "  ✓ Agent system prompt configured"
+fi
+
 # Note: Claude Code plugins from template should be referenced
 # via marketplace URLs in .claude/settings.json, not copied locally
 # Plugins are automatically installed to ~/.claude/plugins/marketplaces/
 # when Claude Code starts with the project
 
 # 3. Verify environment
-echo "[3/3] Verifying environment..."
+echo "[3/4] Verifying environment..."
 node --version
 npm --version
 claude --version
+
+# 4. Export agent prompt location for execute.sh
+echo "[4/4] Setting up agent configuration..."
+if [ -f "$REPO_DIR/.claude/agent.md" ]; then
+    export AGENT_PROMPT_FILE="$REPO_DIR/.claude/agent.md"
+    echo "  ✓ Agent prompt file: $AGENT_PROMPT_FILE"
+fi
 
 echo "==================================="
 echo "Initialization Complete"
 echo "Note: Claude Code will auto-install plugins from .claude/settings.json"
 echo "==================================="
 ```
+
+**Example Agent System Prompt (`agent.md`):**
+
+Based on [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference), the `--system-prompt-file` flag accepts a markdown file with custom system instructions:
+
+```markdown
+# Backend API Development Agent
+
+You are a senior backend engineer specializing in Node.js/TypeScript API development.
+
+## Your Role
+
+- Design and implement secure, scalable RESTful APIs
+- Follow best practices for API design (versioning, error handling, validation)
+- Write comprehensive tests (unit, integration, e2e)
+- Implement proper authentication and authorization (JWT, OAuth)
+- Optimize database queries and implement caching strategies
+
+## Code Standards
+
+- Use TypeScript for type safety
+- Follow the repository's ESLint and Prettier configuration
+- Write JSDoc comments for public APIs
+- Implement proper error handling with custom error classes
+- Use dependency injection for testability
+
+## Security Requirements
+
+- Validate all input using Joi or Zod schemas
+- Sanitize user input to prevent XSS and SQL injection
+- Implement rate limiting on all endpoints
+- Use parameterized queries for database operations
+- Never log sensitive information (passwords, tokens, PII)
+
+## Testing Requirements
+
+- Maintain >80% code coverage
+- Write unit tests for business logic
+- Write integration tests for API endpoints
+- Use factories/fixtures for test data
+- Mock external dependencies
+
+## When You Receive a Task
+
+1. Understand the requirements and ask clarifying questions
+2. Review existing code patterns and architecture
+3. Design the solution following SOLID principles
+4. Implement with tests
+5. Run linters and tests before marking complete
+6. Document any new APIs or configuration
+```
+
+**Example Project Context (`CLAUDE.md`):**
+
+```markdown
+# Backend API Project
+
+## Architecture
+
+This is a Node.js/Express REST API using:
+- TypeScript
+- PostgreSQL (via Prisma ORM)
+- Redis for caching
+- Jest for testing
+- JWT authentication
+
+## Project Structure
+
+- `src/routes/` - API route definitions
+- `src/controllers/` - Request handlers
+- `src/services/` - Business logic
+- `src/models/` - Prisma schema
+- `src/middleware/` - Express middleware
+- `tests/` - Test files
+
+## Key Commands
+
+- `npm test` - Run tests
+- `npm run lint` - Run ESLint
+- `npm run migrate` - Run database migrations
+- `npm run dev` - Start development server
+
+## Important Context
+
+- All endpoints require JWT authentication except `/auth/login` and `/auth/register`
+- API versioning is done via URL path (e.g., `/api/v1/users`)
+- Rate limiting: 100 requests per 15 minutes per IP
+- Database migrations must be reversible
+```
+
+**Key Differences:**
+
+| File | Purpose | Passed To Claude Code |
+|------|---------|----------------------|
+| `agent.md` | Defines the agent's role, expertise, and behavior | Via `--system-prompt-file` flag |
+| `CLAUDE.md` | Provides project-specific context and commands | Auto-read from project root |
+| `settings.json` | Configures plugins, linters, formatters | Via `.claude/settings.json` |
 
 **Plugin Structure (Official Format):**
 
