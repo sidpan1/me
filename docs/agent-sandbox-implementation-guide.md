@@ -594,7 +594,7 @@ echo "[$(date)] Feature branch created: $NEW_BRANCH"
 
 ### Implementation
 
-Templates define their own execution logic via an `execute.sh` script.
+Templates contain plugins and initialization scripts. The platform runs the template's `init.sh` script which installs all plugins before executing Claude Code.
 
 ```bash
 # docker/execute.sh (continued)
@@ -608,112 +608,202 @@ echo "[$(date)] Executing Claude Code with task: $TASK_DESCRIPTION"
 # Claude Code expects to be in the repo directory
 cd "$REPO_DIR"
 
-# Check if template has custom execution script
-TEMPLATE_EXECUTE_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/execute.sh"
+# Check if template has initialization script
+TEMPLATE_INIT_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/scripts/init.sh"
 
-if [ -f "$TEMPLATE_EXECUTE_SCRIPT" ]; then
-    echo "[$(date)] Using template execution script: $TEMPLATE_EXECUTE_SCRIPT"
+if [ -f "$TEMPLATE_INIT_SCRIPT" ]; then
+    echo "[$(date)] Running template initialization: $TEMPLATE_INIT_SCRIPT"
 
     # Make executable
-    chmod +x "$TEMPLATE_EXECUTE_SCRIPT"
+    chmod +x "$TEMPLATE_INIT_SCRIPT"
 
-    # Execute template-specific script
-    # Template script has access to all environment variables
-    bash "$TEMPLATE_EXECUTE_SCRIPT"
-    CLAUDE_EXIT_CODE=$?
+    # Execute template initialization
+    # This installs plugins and sets up environment
+    bash "$TEMPLATE_INIT_SCRIPT"
+    INIT_EXIT_CODE=$?
+
+    if [ $INIT_EXIT_CODE -ne 0 ]; then
+        echo "[ERROR] Template initialization failed with exit code $INIT_EXIT_CODE"
+        exit $INIT_EXIT_CODE
+    fi
 else
-    echo "[$(date)] No template script found, using default Claude Code execution"
-
-    # Fallback to default execution
-    claude \
-        --print \
-        --dangerously-skip-permissions \
-        "$TASK_DESCRIPTION"
-
-    CLAUDE_EXIT_CODE=$?
+    echo "[$(date)] No template initialization script found, skipping plugin installation"
 fi
 
+# Run Claude Code
+echo "[$(date)] Running Claude Code"
+claude \
+    --print \
+    --dangerously-skip-permissions \
+    "$TASK_DESCRIPTION"
+
+CLAUDE_EXIT_CODE=$?
+
 if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    echo "[ERROR] Execution failed with exit code $CLAUDE_EXIT_CODE"
+    echo "[ERROR] Claude Code failed with exit code $CLAUDE_EXIT_CODE"
     exit $CLAUDE_EXIT_CODE
 fi
 
 echo "[$(date)] Execution completed successfully"
 ```
 
-**Template Structure:**
+**Template Structure with Plugins:**
 
 ```bash
-# Example: .claude-templates/backend/execute.sh
+# .claude-templates/backend/
+.claude-templates/backend/
+├── plugins/                      # Claude Code plugins
+│   ├── test-runner/              # Plugin 1: Test Runner
+│   │   ├── .claude-plugin/
+│   │   │   └── plugin.json
+│   │   ├── skills/
+│   │   │   └── run-tests/
+│   │   │       └── SKILL.md
+│   │   └── README.md
+│   ├── code-quality/             # Plugin 2: Code Quality
+│   │   ├── .claude-plugin/
+│   │   │   └── plugin.json
+│   │   ├── commands/
+│   │   │   └── lint.md
+│   │   └── hooks/
+│   │       └── hooks.json
+│   └── api-generator/            # Plugin 3: API Generator
+│       ├── .claude-plugin/
+│       │   └── plugin.json
+│       ├── agents/
+│       │   └── api-builder.md
+│       └── README.md
+├── scripts/
+│   └── init.sh                   # Initialization script
+├── CLAUDE.md                     # Template instructions
+└── settings.json                 # Claude Code settings
+```
+
+**Initialization Script (`scripts/init.sh`):**
+
+```bash
 #!/bin/bash
+# .claude-templates/backend/scripts/init.sh
 set -e
 
-# Template-specific execution script
-# Has access to all environment variables:
-# - TASK_DESCRIPTION
-# - ANTHROPIC_API_KEY
-# - REPO_DIR
-# - etc.
+echo "==================================="
+echo "Backend Template Initialization"
+echo "==================================="
 
-echo "Running backend template execution"
+TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
+PLUGINS_DIR="$TEMPLATE_ROOT/plugins"
 
-# Optional: Pre-processing
-# - Install dependencies
-# - Run linters
-# - Setup environment
+# Install dependencies
+echo "[1/4] Installing dependencies..."
+npm install
 
-# Run Claude Code with template-specific flags
-claude \
-    --print \
-    --dangerously-skip-permissions \
-    "$TASK_DESCRIPTION"
+# Install all Claude Code plugins from plugins/ directory
+echo "[2/4] Installing Claude Code plugins..."
 
-# Optional: Post-processing
-# - Run tests
-# - Format code
-# - Generate documentation
+if [ -d "$PLUGINS_DIR" ]; then
+    # Find all plugin directories (containing .claude-plugin/)
+    for plugin_path in "$PLUGINS_DIR"/*; do
+        if [ -d "$plugin_path/.claude-plugin" ]; then
+            plugin_name=$(basename "$plugin_path")
+            echo "  → Installing plugin: $plugin_name"
+
+            # Install plugin using --plugin-dir flag
+            claude --plugin-dir "$plugin_path" --install-plugin
+
+            # Alternative: Copy to Claude's plugin directory
+            # CLAUDE_PLUGINS_DIR="$HOME/.claude/plugins"
+            # mkdir -p "$CLAUDE_PLUGINS_DIR"
+            # cp -r "$plugin_path" "$CLAUDE_PLUGINS_DIR/$plugin_name"
+        fi
+    done
+    echo "  ✓ All plugins installed"
+else
+    echo "  No plugins directory found, skipping plugin installation"
+fi
+
+# Run linters/checks
+echo "[3/4] Running code quality checks..."
+npm run lint || echo "  Warning: Linting failed, continuing..."
+
+# Verify environment
+echo "[4/4] Verifying environment..."
+node --version
+npm --version
+claude --version
+
+echo "==================================="
+echo "Initialization Complete"
+echo "==================================="
+```
+
+**Plugin Structure (Official Format):**
+
+Based on [Claude Code Plugin Documentation](https://code.claude.com/docs/en/plugins), each plugin follows this structure:
+
+```bash
+# Example: .claude-templates/backend/plugins/test-runner/
+test-runner/
+├── .claude-plugin/
+│   └── plugin.json           # Required: Plugin metadata
+├── commands/                  # Optional: Slash commands
+│   └── test.md               # /test command
+├── agents/                    # Optional: Specialized agents
+│   └── test-analyzer.md
+├── skills/                    # Optional: Auto-invoked skills
+│   └── run-tests/
+│       └── SKILL.md
+├── hooks/                     # Optional: Event handlers
+│   └── hooks.json
+├── .mcp.json                 # Optional: MCP server config
+└── README.md
+```
+
+**Plugin Metadata (`plugin.json`):**
+
+```json
+{
+  "name": "test-runner",
+  "version": "1.0.0",
+  "description": "Automatically runs tests for backend services",
+  "author": "Backend Team",
+  "tags": ["testing", "backend", "nodejs"],
+  "commands": {
+    "test": "commands/test.md"
+  },
+  "skills": {
+    "run-tests": "skills/run-tests"
+  },
+  "hooks": "hooks/hooks.json"
+}
 ```
 
 **Key Details:**
 
-1. **Template-Defined Execution:**
-   - Each template can have `.claude-templates/{template-name}/execute.sh`
-   - Script is executed from repo root directory
-   - Has access to all environment variables
-   - Can customize pre/post-processing steps
+1. **Template-Managed Plugins:**
+   - Plugins live in `.claude-templates/{template}/plugins/`
+   - Each plugin follows official Claude Code plugin structure
+   - Installed during initialization (before Claude Code execution)
 
-2. **Default Fallback:**
-   - If no template script exists, uses default Claude Code invocation
-   - Ensures backwards compatibility
+2. **Plugin Installation:**
+   - Via `claude --plugin-dir` flag for local plugins
+   - Via `.claude/settings.json` for marketplace plugins
+   - Via `scripts/init.sh` for automated setup
 
-3. **Common Template Scripts:**
-   ```bash
-   .claude-templates/
-   ├── backend/
-   │   ├── CLAUDE.md           # Template instructions
-   │   ├── settings.json        # Claude Code settings
-   │   ├── execute.sh          # Execution script (backend-specific)
-   │   └── hooks/              # Session hooks
-   ├── frontend/
-   │   ├── CLAUDE.md
-   │   ├── settings.json
-   │   ├── execute.sh          # Execution script (frontend-specific)
-   │   └── skills/
-   └── default/
-       ├── CLAUDE.md
-       ├── settings.json
-       └── execute.sh          # Execution script (default)
-   ```
+3. **Plugin Components:**
+   - **Commands**: Custom slash commands (`.md` files)
+   - **Agents**: Specialized AI assistants (`.md` files)
+   - **Skills**: Auto-invoked capabilities (directories with `SKILL.md`)
+   - **Hooks**: Event handlers (`hooks.json`)
+   - **MCP Servers**: External tool integrations (`.mcp.json`)
 
-4. **Environment Variables Available to Template:**
+4. **Environment Variables Available:**
    - `TASK_ID`: Unique task identifier
    - `TASK_DESCRIPTION`: User-provided task description
-   - `REPO_URL`: Repository URL
-   - `BASE_BRANCH`: Base branch name
-   - `NEW_BRANCH`: New branch name
+   - `REPO_DIR`: Repository directory path
    - `TASK_TEMPLATE`: Template name
    - `ANTHROPIC_API_KEY`: Claude API key
    - `GITHUB_TOKEN`: Git authentication token
+   - `CLAUDE_PLUGIN_ROOT`: Plugin root directory (set by Claude Code)
 
 ---
 
@@ -914,11 +1004,11 @@ spec:
 ---
 
 ## FR-9: Template structure
-**Requirement:** Templates define execution behavior and Claude Code configuration
+**Requirement:** Templates define plugins, initialization scripts, and Claude Code configuration
 
 ### Implementation
 
-Templates are **checked into each target repository** at `.claude-templates/{template-name}/`.
+Templates are **checked into each target repository** at `.claude-templates/{template-name}/` and contain Claude Code plugins and initialization scripts.
 
 **Complete Template Structure:**
 
@@ -928,79 +1018,198 @@ order-service/
 ├── src/
 ├── .claude-templates/
 │   ├── default/
+│   │   ├── plugins/              # Claude Code plugins
+│   │   ├── scripts/
+│   │   │   └── init.sh          # Initialization script
 │   │   ├── CLAUDE.md            # Instructions for Claude
-│   │   ├── settings.json        # Claude Code settings
-│   │   ├── execute.sh           # Execution script (optional)
-│   │   ├── hooks/               # Session hooks (optional)
-│   │   │   └── session-start.sh
-│   │   └── skills/              # Custom skills (optional)
+│   │   └── settings.json        # Claude Code settings
+│   │
 │   ├── backend/
+│   │   ├── plugins/              # Backend-specific plugins
+│   │   │   ├── test-runner/      # Plugin: Automated testing
+│   │   │   │   ├── .claude-plugin/
+│   │   │   │   │   └── plugin.json
+│   │   │   │   ├── skills/
+│   │   │   │   │   └── run-tests/
+│   │   │   │   │       └── SKILL.md
+│   │   │   │   └── README.md
+│   │   │   │
+│   │   │   ├── code-quality/     # Plugin: Linting & formatting
+│   │   │   │   ├── .claude-plugin/
+│   │   │   │   │   └── plugin.json
+│   │   │   │   ├── commands/
+│   │   │   │   │   ├── lint.md
+│   │   │   │   │   └── format.md
+│   │   │   │   └── hooks/
+│   │   │   │       └── hooks.json
+│   │   │   │
+│   │   │   └── api-generator/    # Plugin: API scaffolding
+│   │   │       ├── .claude-plugin/
+│   │   │       │   └── plugin.json
+│   │   │       ├── agents/
+│   │   │       │   └── api-builder.md
+│   │   │       └── skills/
+│   │   │           └── generate-endpoint/
+│   │   │               └── SKILL.md
+│   │   │
+│   │   ├── scripts/
+│   │   │   └── init.sh          # Backend initialization
 │   │   ├── CLAUDE.md
-│   │   ├── settings.json
-│   │   ├── execute.sh           # Backend-specific execution
-│   │   └── hooks/
-│   │       ├── pre-commit.sh    # Run tests before commit
-│   │       └── post-commit.sh
+│   │   └── settings.json
+│   │
 │   └── frontend/
+│       ├── plugins/              # Frontend-specific plugins
+│       │   ├── component-generator/
+│       │   │   ├── .claude-plugin/
+│       │   │   │   └── plugin.json
+│       │   │   └── skills/
+│       │   │       └── create-component/
+│       │   │           └── SKILL.md
+│       │   └── style-helper/
+│       │       ├── .claude-plugin/
+│       │       │   └── plugin.json
+│       │       └── commands/
+│       │           └── theme.md
+│       ├── scripts/
+│       │   └── init.sh          # Frontend initialization
 │       ├── CLAUDE.md
-│       ├── settings.json
-│       ├── execute.sh           # Frontend-specific execution
-│       └── skills/
-│           └── component-generator/
+│       └── settings.json
 └── README.md
 ```
 
 **Template Components:**
 
-### 1. `execute.sh` (Execution Script)
-Defines how Claude Code is invoked and what pre/post-processing occurs.
+### 1. `plugins/` Directory
+Contains Claude Code plugins following the [official plugin structure](https://code.claude.com/docs/en/plugins).
+
+**Example Plugin: test-runner**
+
+```bash
+.claude-templates/backend/plugins/test-runner/
+├── .claude-plugin/
+│   └── plugin.json           # Required metadata
+├── commands/                  # Slash commands
+│   └── test.md
+├── agents/                    # Specialized agents
+│   └── test-analyzer.md
+├── skills/                    # Auto-invoked skills
+│   └── run-tests/
+│       └── SKILL.md
+├── hooks/                     # Event handlers
+│   └── hooks.json
+└── README.md
+```
+
+**plugin.json:**
+```json
+{
+  "name": "test-runner",
+  "version": "1.0.0",
+  "description": "Automated testing for backend services",
+  "author": "Backend Team",
+  "tags": ["testing", "backend"],
+  "commands": {
+    "test": "commands/test.md"
+  },
+  "skills": {
+    "run-tests": "skills/run-tests"
+  },
+  "hooks": "hooks/hooks.json"
+}
+```
+
+**SKILL.md Example:**
+```markdown
+# Run Tests Skill
+
+This skill automatically runs tests based on the code changes.
+
+## When to Use
+- After implementing new features
+- When modifying existing code
+- Before committing changes
+
+## How it Works
+1. Detects test files in the project
+2. Runs appropriate test command (npm test, pytest, etc.)
+3. Reports results and failures
+```
+
+### 2. `scripts/init.sh` (Initialization Script)
+Runs before Claude Code execution to install plugins and set up environment.
 
 ```bash
 #!/bin/bash
-# .claude-templates/backend/execute.sh
+# .claude-templates/backend/scripts/init.sh
 set -e
 
-echo "Backend template: Installing dependencies"
+echo "==================================="
+echo "Backend Template Initialization"
+echo "==================================="
+
+TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
+PLUGINS_DIR="$TEMPLATE_ROOT/plugins"
+
+# 1. Install project dependencies
+echo "[1/4] Installing dependencies..."
 npm install
 
-echo "Backend template: Running linters"
-npm run lint
+# 2. Install all Claude Code plugins
+echo "[2/4] Installing Claude Code plugins..."
+if [ -d "$PLUGINS_DIR" ]; then
+    for plugin_path in "$PLUGINS_DIR"/*; do
+        if [ -d "$plugin_path/.claude-plugin" ]; then
+            plugin_name=$(basename "$plugin_path")
+            echo "  → Installing plugin: $plugin_name"
+            claude --plugin-dir "$plugin_path" --install-plugin
+        fi
+    done
+    echo "  ✓ All plugins installed"
+fi
 
-echo "Backend template: Executing Claude Code"
-claude \
-    --print \
-    --dangerously-skip-permissions \
-    "$TASK_DESCRIPTION"
+# 3. Run code quality checks
+echo "[3/4] Running code quality checks..."
+npm run lint || echo "  Warning: Linting failed"
 
-echo "Backend template: Running tests"
-npm test
+# 4. Verify environment
+echo "[4/4] Verifying environment..."
+node --version
+npm --version
+claude --version
 
-echo "Backend template: Building"
-npm run build
+echo "==================================="
+echo "Initialization Complete"
+echo "==================================="
 ```
 
-### 2. `CLAUDE.md` (Instructions)
+### 3. `CLAUDE.md` (Instructions)
 Context and instructions for Claude Code.
 
 ```markdown
 # Backend Development Template
 
 ## Project Context
-This is a Node.js backend service using Express and PostgreSQL.
+Node.js backend service using Express and PostgreSQL.
 
 ## Coding Standards
-- Use TypeScript
-- Follow Airbnb style guide
-- Write unit tests for all new functions
-- Use async/await, not callbacks
+- TypeScript with strict mode
+- Airbnb style guide
+- 100% test coverage for business logic
+- Async/await pattern
 
-## Common Tasks
-- API endpoints go in `src/routes/`
-- Business logic in `src/services/`
-- Database models in `src/models/`
+## Architecture
+- Controllers in `src/controllers/`
+- Services in `src/services/`
+- Models in `src/models/`
+- Routes in `src/routes/`
+
+## Available Plugins
+- **test-runner**: Use `/test` to run tests
+- **code-quality**: Use `/lint` to check code quality
+- **api-generator**: Automatically scaffolds REST endpoints
 ```
 
-### 3. `settings.json` (Configuration)
+### 4. `settings.json` (Configuration)
 Claude Code settings for this template.
 
 ```json
@@ -1010,41 +1219,42 @@ Claude Code settings for this template.
   "linter": "eslint",
   "formatter": "prettier",
   "autoFormat": true,
-  "autoTest": true
+  "plugins": {
+    "enabled": true,
+    "autoLoad": ["test-runner", "code-quality", "api-generator"]
+  }
 }
-```
-
-### 4. `hooks/` (Lifecycle Hooks - Optional)
-Scripts that run during Claude Code lifecycle.
-
-```bash
-# .claude-templates/backend/hooks/session-start.sh
-#!/bin/bash
-echo "Session starting - checking environment"
-node --version
-npm --version
 ```
 
 **Key Details:**
 
-1. **No Platform Injection Needed:**
-   - Templates live in target repos
-   - Cloned with repo during FR-3
-   - Selected via `TASK_TEMPLATE` environment variable
+1. **Plugin Management:**
+   - Plugins stored in `.claude-templates/{template}/plugins/`
+   - Each plugin follows [official Claude Code plugin format](https://github.com/anthropics/claude-code/blob/main/plugins/README.md)
+   - Installed automatically by `scripts/init.sh`
+   - Available immediately when Claude Code runs
 
 2. **Template Selection:**
    - API request specifies: `"task_template": "backend"`
    - Platform sets: `TASK_TEMPLATE=backend`
-   - Execution script looks for: `.claude-templates/backend/execute.sh`
+   - Init script runs: `.claude-templates/backend/scripts/init.sh`
 
-3. **Fallback Behavior:**
-   - If template doesn't have `execute.sh`, uses default Claude Code invocation
-   - If template doesn't exist, uses `.claude-templates/default/`
+3. **Plugin Types:**
+   - **Commands**: Slash commands like `/test`, `/lint`
+   - **Agents**: Specialized AI assistants for specific tasks
+   - **Skills**: Auto-invoked capabilities (run tests, generate code)
+   - **Hooks**: Event handlers (pre-commit, post-commit, etc.)
 
 4. **Template Ownership:**
    - Managed by repo teams, not platform team
-   - Teams can customize per-repo or per-use-case
+   - Teams can add/remove plugins as needed
    - Version controlled with application code
+   - Changes deployed automatically (cloned with repo)
+
+5. **Fallback Behavior:**
+   - If no `scripts/init.sh`, skips plugin installation
+   - Claude Code still runs with task description
+   - Uses default behavior without custom plugins
 
 ---
 
@@ -1894,48 +2104,61 @@ git checkout -b "$NEW_BRANCH"
 log_info "Feature branch created: $NEW_BRANCH"
 
 # ============================================
-# Step 3: Execute Claude Code (FR-5)
+# Step 3: Initialize Template (FR-5, FR-9)
 # ============================================
 
-log_info "Step 3: Executing Claude Code"
+log_info "Step 3: Initializing template"
 
-# Check if template has custom execution script
-TEMPLATE_EXECUTE_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/execute.sh"
+# Check if template has initialization script
+TEMPLATE_INIT_SCRIPT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE/scripts/init.sh"
 
-if [ -f "$TEMPLATE_EXECUTE_SCRIPT" ]; then
-    log_info "Using template execution script: $TEMPLATE_EXECUTE_SCRIPT"
+if [ -f "$TEMPLATE_INIT_SCRIPT" ]; then
+    log_info "Running template initialization: $TEMPLATE_INIT_SCRIPT"
 
     # Make executable
-    chmod +x "$TEMPLATE_EXECUTE_SCRIPT"
+    chmod +x "$TEMPLATE_INIT_SCRIPT"
 
-    # Execute template-specific script
-    bash "$TEMPLATE_EXECUTE_SCRIPT"
-    CLAUDE_EXIT_CODE=$?
+    # Execute template initialization (installs plugins, dependencies, etc.)
+    bash "$TEMPLATE_INIT_SCRIPT"
+    INIT_EXIT_CODE=$?
+
+    if [ $INIT_EXIT_CODE -ne 0 ]; then
+        log_error "Template initialization failed with exit code $INIT_EXIT_CODE"
+        echo '{"success": false, "error": "Template initialization failed"}' > /workspace/result.json
+        exit $INIT_EXIT_CODE
+    fi
+
+    log_info "Template initialized successfully"
 else
-    log_info "No template script found, using default Claude Code execution"
-
-    # Fallback to default execution
-    claude \
-        --print \
-        --dangerously-skip-permissions \
-        "$TASK_DESCRIPTION"
-
-    CLAUDE_EXIT_CODE=$?
+    log_info "No template initialization script found, skipping"
 fi
 
+# ============================================
+# Step 4: Execute Claude Code (FR-5)
+# ============================================
+
+log_info "Step 4: Executing Claude Code"
+
+claude \
+    --print \
+    --dangerously-skip-permissions \
+    "$TASK_DESCRIPTION"
+
+CLAUDE_EXIT_CODE=$?
+
 if [ $CLAUDE_EXIT_CODE -ne 0 ]; then
-    log_error "Execution failed with exit code $CLAUDE_EXIT_CODE"
-    echo '{"success": false, "error": "Execution failed"}' > /workspace/result.json
+    log_error "Claude Code failed with exit code $CLAUDE_EXIT_CODE"
+    echo '{"success": false, "error": "Claude Code execution failed"}' > /workspace/result.json
     exit $CLAUDE_EXIT_CODE
 fi
 
-log_info "Execution completed successfully"
+log_info "Claude Code execution completed successfully"
 
 # ============================================
-# Step 4: Commit Changes (FR-6)
+# Step 5: Commit Changes (FR-6)
 # ============================================
 
-log_info "Step 4: Committing changes"
+log_info "Step 5: Committing changes"
 
 if git diff --quiet && git diff --cached --quiet; then
     log_warn "No changes detected, skipping commit"
@@ -1964,10 +2187,10 @@ Base branch: ${BASE_BRANCH}
 fi
 
 # ============================================
-# Step 5: Push to Remote (FR-7)
+# Step 6: Push to Remote (FR-7)
 # ============================================
 
-log_info "Step 5: Pushing to remote"
+log_info "Step 6: Pushing to remote"
 
 git push -u origin "$NEW_BRANCH"
 
@@ -1982,10 +2205,10 @@ fi
 log_info "Branch pushed successfully"
 
 # ============================================
-# Step 6: Write Result
+# Step 7: Write Result
 # ============================================
 
-log_info "Step 6: Writing result"
+log_info "Step 7: Writing result"
 
 cat > /workspace/result.json <<EOF
 {
