@@ -20,7 +20,7 @@
 
 ### Overview
 - **Official Project:** Kubernetes SIG Apps subproject (kubernetes-sigs/agent-sandbox)
-- **Status:** Production-ready, available on GKE and self-hosted K8s clusters
+- **Status:** Production-ready, available on EKS, GKE, and self-hosted K8s clusters
 - **Launch:** KubeCon NA 2025
 - **Purpose:** Declarative API for managing isolated, stateful, singleton workloads (AI agent runtimes)
 
@@ -327,7 +327,7 @@ def get_sandbox_status(task_id):
 | **Sandbox Runtime** | gVisor (default) / Kata (high-security) | Balance of speed and isolation |
 | **Workspace Storage** | EFS with K8s CSI driver | Persistent across pod restarts |
 | **Git Provider** | GitHub | Same as MVP PRD |
-| **Hosting** | GKE or self-hosted K8s (EKS, AKS, on-prem) | Flexibility |
+| **Hosting** | EKS or self-hosted K8s (GKE, AKS, on-prem) | Flexibility |
 
 ### Directory Structure (Updated)
 
@@ -424,11 +424,11 @@ async def get_task(task_id: str):
 5. Write integration tests
 
 ### Phase 3: Production Hardening (Week 5-6)
-1. Set up GKE cluster with Agent Sandbox
+1. Set up EKS cluster with Agent Sandbox
 2. Configure EFS CSI driver for persistent storage
 3. Set up pre-warmed sandbox pools
-4. Add monitoring (Prometheus, Grafana)
-5. Configure autoscaling
+4. Add monitoring (Amazon Managed Prometheus, Amazon Managed Grafana, CloudWatch)
+5. Configure autoscaling (Cluster Autoscaler or Karpenter)
 6. Security hardening (NetworkPolicies, PodSecurityStandards)
 
 ### Phase 4: Optimization (Week 7-8)
@@ -453,7 +453,7 @@ async def get_task(task_id: str):
 ### Agent Sandbox Approach
 - **Development time:** 3-4 weeks (mostly API layer)
 - **Maintenance:** 0.5 engineers ongoing (Kubernetes manages orchestration)
-- **Infrastructure:** GKE cluster ($150-500/month) + EFS ($30-100/month)
+- **Infrastructure:** EKS cluster ($150-500/month) + EFS ($30-100/month)
 - **Risk:** Low (battle-tested Kubernetes)
 
 **Total first-year cost:** ~$80K (engineering) + $2-7K (infra)

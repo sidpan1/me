@@ -946,7 +946,7 @@ spec:
 
       containers:
       - name: agent
-        image: gcr.io/your-project/claude-code-agent:latest
+        image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/claude-code-agent:latest
         command: ["/docker/execute.sh"]
 
         # ... (env, volumes, etc.)
@@ -1086,7 +1086,7 @@ spec:
     spec:
       containers:
       - name: agent
-        image: gcr.io/your-project/claude-code-agent:latest
+        image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/claude-code-agent:latest
 
         # Resource limits (per task)
         resources:
@@ -1106,29 +1106,37 @@ spec:
    - If pool empty → cold start (2-5 seconds)
 3. Controller replenishes pool to maintain `minReady`
 
-**Cluster Sizing (GKE Example):**
+**Cluster Sizing (EKS Example):**
 
 For 10 concurrent tasks:
 - **CPU:** 10 tasks × 2 cores = 20 cores
 - **Memory:** 10 tasks × 4GB = 40GB
 - **Storage:** 10 tasks × 10GB = 100GB EFS
 
-**Node Pool Configuration:**
+**Node Group Configuration:**
 
 ```yaml
-# k8s/cluster-config.yaml (GKE example)
-nodePools:
-- name: agent-pool
-  initialNodeCount: 3
-  autoscaling:
-    enabled: true
-    minNodeCount: 3
-    maxNodeCount: 10
-  config:
-    machineType: n2-standard-8  # 8 vCPU, 32GB RAM
-    diskSizeGb: 100
-    labels:
-      workload: coding-agents
+# eksctl config or AWS Console
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: coding-agents-cluster
+  region: us-east-1
+  version: "1.28"
+
+managedNodeGroups:
+- name: agent-nodegroup
+  instanceType: m6i.2xlarge  # 8 vCPU, 32GB RAM
+  minSize: 3
+  maxSize: 10
+  desiredCapacity: 3
+  volumeSize: 100
+  labels:
+    workload: coding-agents
+  tags:
+    Environment: production
+    Application: coding-agents-platform
 ```
 
 **Per-node capacity:** 8 vCPU / 2 cores per task = 4 tasks/node
@@ -1207,7 +1215,7 @@ Already covered in **FR-8** above.
                  topologyKey: topology.kubernetes.io/zone
          containers:
          - name: api
-           image: gcr.io/your-project/api-server:latest
+           image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/api-server:latest
            volumeMounts:
            - name: task-storage
              mountPath: /data/tasks
@@ -1460,15 +1468,198 @@ tasks_running.inc()  # When task starts
 tasks_running.dec()  # When task completes
 ```
 
-**5. Centralized Logging (GKE Example):**
+**Exporting to Amazon Managed Prometheus (AMP):**
 
 ```yaml
-# GKE automatically sends logs to Cloud Logging
-# Query with:
-# resource.type="k8s_container"
-# resource.labels.namespace_name="coding-agents"
-# labels."app"="coding-agents-platform"
-# jsonPayload.task_id="task-abc-123"
+# k8s/prometheus-config.yaml
+# Deploy Prometheus to scrape metrics and remote write to AMP
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: coding-agents
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+    # Scrape API server metrics
+    - job_name: 'api-server'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - coding-agents
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: api-server
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+    # Remote write to Amazon Managed Prometheus
+    remote_write:
+    - url: https://aps-workspaces.us-east-1.amazonaws.com/workspaces/{workspace-id}/api/v1/remote_write
+      queue_config:
+        max_samples_per_send: 1000
+        max_shards: 200
+        capacity: 2500
+      sigv4:
+        region: us-east-1
+      # Uses IRSA (IAM Roles for Service Accounts) for auth
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: coding-agents
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::{account-id}:role/PrometheusRemoteWriteRole
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: coding-agents
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: public.ecr.aws/bitnami/prometheus:latest
+        args:
+        - '--config.file=/etc/prometheus/prometheus.yml'
+        - '--storage.tsdb.path=/prometheus'
+        - '--web.enable-lifecycle'
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir: {}
+```
+
+**API Server Deployment (with Prometheus annotations):**
+
+```yaml
+# k8s/api-server-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: coding-agents
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: api-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: api
+        image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/api-server:latest
+        ports:
+        - name: http
+          containerPort: 8000
+        - name: metrics
+          containerPort: 8000
+```
+
+**IAM Role for Prometheus (Terraform example):**
+
+```hcl
+# Create IAM role for Prometheus IRSA
+resource "aws_iam_role" "prometheus_amp" {
+  name = "PrometheusRemoteWriteRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}"
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")}:sub" = "system:serviceaccount:coding-agents:prometheus"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "prometheus_amp_write" {
+  name = "AMPRemoteWritePolicy"
+  role = aws_iam_role.prometheus_amp.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "aps:RemoteWrite",
+        "aps:GetSeries",
+        "aps:GetLabels",
+        "aps:GetMetricMetadata"
+      ]
+      Resource = "arn:aws:aps:us-east-1:${data.aws_caller_identity.current.account_id}:workspace/${var.amp_workspace_id}"
+    }]
+  })
+}
+```
+
+**5. Centralized Logging (EKS Example):**
+
+```yaml
+# EKS with CloudWatch Container Insights
+# Install Fluent Bit DaemonSet for log forwarding
+
+# Query in CloudWatch Logs Insights:
+fields @timestamp, log, kubernetes.pod_name, kubernetes.namespace_name
+| filter kubernetes.namespace_name = "coding-agents"
+| filter kubernetes.labels.app = "coding-agents-platform"
+| filter log like /task-abc-123/
+| sort @timestamp desc
+| limit 1000
+
+# Or query with AWS CLI:
+aws logs filter-log-events \
+  --log-group-name /aws/eks/coding-agents-cluster/cluster \
+  --filter-pattern 'task-abc-123' \
+  --start-time $(date -d '1 hour ago' +%s)000
 ```
 
 **6. Grafana Dashboard:**
@@ -1715,7 +1906,7 @@ spec:
 
       containers:
       - name: agent
-        image: gcr.io/your-project/claude-code-agent:v1.0.0
+        image: {account-id}.dkr.ecr.us-east-1.amazonaws.com/claude-code-agent:v1.0.0
 
         command: ["/docker/execute.sh"]
 
