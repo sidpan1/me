@@ -647,37 +647,21 @@ fi
 echo "[$(date)] Execution completed successfully"
 ```
 
-**Template Structure with Plugins:**
+**Template Structure:**
 
 ```bash
 # .claude-templates/backend/
 .claude-templates/backend/
-├── plugins/                      # Claude Code plugins
-│   ├── test-runner/              # Plugin 1: Test Runner
-│   │   ├── .claude-plugin/
-│   │   │   └── plugin.json
-│   │   ├── skills/
-│   │   │   └── run-tests/
-│   │   │       └── SKILL.md
-│   │   └── README.md
-│   ├── code-quality/             # Plugin 2: Code Quality
-│   │   ├── .claude-plugin/
-│   │   │   └── plugin.json
-│   │   ├── commands/
-│   │   │   └── lint.md
-│   │   └── hooks/
-│   │       └── hooks.json
-│   └── api-generator/            # Plugin 3: API Generator
-│       ├── .claude-plugin/
-│       │   └── plugin.json
-│       ├── agents/
-│       │   └── api-builder.md
-│       └── README.md
 ├── scripts/
 │   └── init.sh                   # Initialization script
-├── CLAUDE.md                     # Template instructions
-└── settings.json                 # Claude Code settings
+├── CLAUDE.md                     # Template instructions for Claude
+└── settings.json                 # Claude Code settings (plugin refs)
 ```
+
+**Note:** Based on [Claude Code documentation](https://code.claude.com/docs/en/plugins), plugins are NOT stored in template directories. Instead:
+- Plugins are referenced via marketplace URLs in `settings.json`
+- Claude Code installs plugins to `~/.claude/plugins/marketplaces/`
+- Templates only contain configuration, not plugin code
 
 **Initialization Script (`scripts/init.sh`):**
 
@@ -691,48 +675,42 @@ echo "Backend Template Initialization"
 echo "==================================="
 
 TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
-PLUGINS_DIR="$TEMPLATE_ROOT/plugins"
 
-# Install dependencies
-echo "[1/4] Installing dependencies..."
+# 1. Install project dependencies
+echo "[1/3] Installing dependencies..."
 npm install
 
-# Install all Claude Code plugins from plugins/ directory
-echo "[2/4] Installing Claude Code plugins..."
+# 2. Configure Claude Code settings
+# Claude Code uses .claude/settings.json in project root
+echo "[2/3] Configuring Claude Code..."
 
-if [ -d "$PLUGINS_DIR" ]; then
-    # Find all plugin directories (containing .claude-plugin/)
-    for plugin_path in "$PLUGINS_DIR"/*; do
-        if [ -d "$plugin_path/.claude-plugin" ]; then
-            plugin_name=$(basename "$plugin_path")
-            echo "  → Installing plugin: $plugin_name"
+# Copy template settings to .claude/ directory
+mkdir -p "$REPO_DIR/.claude"
 
-            # Install plugin using --plugin-dir flag
-            claude --plugin-dir "$plugin_path" --install-plugin
-
-            # Alternative: Copy to Claude's plugin directory
-            # CLAUDE_PLUGINS_DIR="$HOME/.claude/plugins"
-            # mkdir -p "$CLAUDE_PLUGINS_DIR"
-            # cp -r "$plugin_path" "$CLAUDE_PLUGINS_DIR/$plugin_name"
-        fi
-    done
-    echo "  ✓ All plugins installed"
-else
-    echo "  No plugins directory found, skipping plugin installation"
+if [ -f "$TEMPLATE_ROOT/settings.json" ]; then
+    cp "$TEMPLATE_ROOT/settings.json" "$REPO_DIR/.claude/settings.json"
+    echo "  ✓ Claude Code settings configured"
 fi
 
-# Run linters/checks
-echo "[3/4] Running code quality checks..."
-npm run lint || echo "  Warning: Linting failed, continuing..."
+if [ -f "$TEMPLATE_ROOT/CLAUDE.md" ]; then
+    cp "$TEMPLATE_ROOT/CLAUDE.md" "$REPO_DIR/CLAUDE.md"
+    echo "  ✓ Claude instructions copied"
+fi
 
-# Verify environment
-echo "[4/4] Verifying environment..."
+# Note: Claude Code plugins from template should be referenced
+# via marketplace URLs in .claude/settings.json, not copied locally
+# Plugins are automatically installed to ~/.claude/plugins/marketplaces/
+# when Claude Code starts with the project
+
+# 3. Verify environment
+echo "[3/3] Verifying environment..."
 node --version
 npm --version
 claude --version
 
 echo "==================================="
 echo "Initialization Complete"
+echo "Note: Claude Code will auto-install plugins from .claude/settings.json"
 echo "==================================="
 ```
 
@@ -777,33 +755,60 @@ test-runner/
 }
 ```
 
+**settings.json (with Plugin Marketplace References):**
+
+Based on [Claude Code plugin documentation](https://code.claude.com/docs/en/plugins), plugins are configured via marketplace references:
+
+```json
+{
+  "preferredLanguages": ["typescript", "javascript"],
+  "testFramework": "jest",
+  "linter": "eslint",
+  "formatter": "prettier",
+  "autoFormat": true,
+  "marketplaces": [
+    {
+      "url": "https://github.com/your-org/backend-plugins",
+      "type": "github"
+    }
+  ],
+  "plugins": [
+    "test-runner@your-org/backend-plugins",
+    "code-quality@your-org/backend-plugins",
+    "api-generator@your-org/backend-plugins"
+  ]
+}
+```
+
 **Key Details:**
 
-1. **Template-Managed Plugins:**
-   - Plugins live in `.claude-templates/{template}/plugins/`
-   - Each plugin follows official Claude Code plugin structure
-   - Installed during initialization (before Claude Code execution)
+1. **Plugin Installation Location:**
+   - Plugins install to `~/.claude/plugins/marketplaces/` ([source](https://claudelog.com/faqs/where-is-claude-code-installed/))
+   - Organized by marketplace: `~/.claude/plugins/marketplaces/{marketplace-name}/`
+   - Commands symlinked to `~/.claude/commands/`
 
-2. **Plugin Installation:**
-   - Via `claude --plugin-dir` flag for local plugins
-   - Via `.claude/settings.json` for marketplace plugins
-   - Via `scripts/init.sh` for automated setup
+2. **Plugin Configuration Methods:**
+   - **Project-level**: `.claude/settings.json` (checked into git, shared with team)
+   - **User-level**: `~/.claude/settings.json` (global settings)
+   - **Personal**: `.claude/settings.local.json` (not checked into git)
 
-3. **Plugin Components:**
-   - **Commands**: Custom slash commands (`.md` files)
-   - **Agents**: Specialized AI assistants (`.md` files)
-   - **Skills**: Auto-invoked capabilities (directories with `SKILL.md`)
-   - **Hooks**: Event handlers (`hooks.json`)
-   - **MCP Servers**: External tool integrations (`.mcp.json`)
+3. **Plugin Loading:**
+   - Claude Code auto-installs plugins from marketplaces on startup
+   - Plugins referenced in `settings.json` are downloaded if missing
+   - No manual installation needed in init script
 
-4. **Environment Variables Available:**
+4. **--plugin-dir Flag:**
+   - Used ONLY for plugin development/testing ([source](https://code.claude.com/docs/en/plugins))
+   - Loads plugin directly without installation
+   - NOT for production use
+
+5. **Environment Variables Available:**
    - `TASK_ID`: Unique task identifier
    - `TASK_DESCRIPTION`: User-provided task description
    - `REPO_DIR`: Repository directory path
    - `TASK_TEMPLATE`: Template name
    - `ANTHROPIC_API_KEY`: Claude API key
    - `GITHUB_TOKEN`: Git authentication token
-   - `CLAUDE_PLUGIN_ROOT`: Plugin root directory (set by Claude Code)
 
 ---
 
