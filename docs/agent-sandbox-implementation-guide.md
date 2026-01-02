@@ -777,7 +777,7 @@ async def execute_claude_code(task_description: str) -> None:
     """
     logger.info(f"Executing Claude Code with task: {task_description[:100]}...")
 
-    template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
+    template_dir = REPO_DIR / ".task-templates" / TASK_TEMPLATE
 
     # Run template initialization - this is the only template specification
     # init.py handles everything (dependencies, settings, etc.)
@@ -833,7 +833,7 @@ def _load_system_prompt(template_dir: Path) -> Optional[str]:
 **Template Structure (Simplified):**
 
 ```
-.claude-templates/backend/
+.task-templates/backend/
 ├── scripts/
 │   └── init.py                   # ONLY SPECIFICATION - handles all setup
 ├── agent.md                      # Optional: System prompt for the agent
@@ -865,7 +865,7 @@ from pathlib import Path
 
 REPO_DIR = Path(os.environ.get("REPO_DIR", "."))
 TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "backend")
-TEMPLATE_ROOT = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
+TEMPLATE_ROOT = REPO_DIR / ".task-templates" / TASK_TEMPLATE
 
 
 def main():
@@ -1041,10 +1041,10 @@ def commit_changes() -> str:
     # Stage all changes
     run_git("add", "-A")
 
-    # Exclude .claude-templates if it was modified
+    # Exclude .task-templates if it was modified
     # Templates should not be committed by the agent
     try:
-        run_git("reset", "--", ".claude-templates/", check=False)
+        run_git("reset", "--", ".task-templates/", check=False)
     except GitError:
         pass  # Directory might not exist
 
@@ -1076,7 +1076,7 @@ Base branch: {BASE_BRANCH}
 
 2. **Staging:**
    - `git add -A`: Stage all changes (new, modified, deleted)
-   - Exclude `.claude-templates/` to prevent accidental template commits
+   - Exclude `.task-templates/` to prevent accidental template commits
 
 3. **Commit Message Format:**
    - Follows Conventional Commits: `<type>: <description>`
@@ -1241,7 +1241,7 @@ spec:
 
 ### Implementation
 
-Templates are **checked into each target repository** at `.claude-templates/{template-name}/`.
+Templates are **checked into each target repository** at `.task-templates/{template-name}/`.
 
 **Template Structure (Simplified):**
 
@@ -1249,7 +1249,7 @@ Templates are **checked into each target repository** at `.claude-templates/{tem
 # Target repo (e.g., github.com/swiggy/order-service)
 order-service/
 ├── src/
-├── .claude-templates/
+├── .task-templates/
 │   ├── default/
 │   │   ├── scripts/
 │   │   │   └── init.py          # ONLY SPECIFICATION
@@ -1323,7 +1323,7 @@ if __name__ == "__main__":
 
 - API request specifies: `"task_template": "backend"`
 - Platform sets: `TASK_TEMPLATE=backend`
-- Executes: `.claude-templates/backend/scripts/init.py`
+- Executes: `.task-templates/backend/scripts/init.py`
 
 **Fallback Behavior:**
 
@@ -2339,7 +2339,7 @@ async def execute_claude_code(task_description: str) -> None:
     """
     logger.info("Step 4: Executing Claude Code via Agent SDK")
 
-    template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
+    template_dir = REPO_DIR / ".task-templates" / TASK_TEMPLATE
 
     # Run template initialization - handles all setup
     if template_dir.exists():
@@ -2385,7 +2385,7 @@ def commit_changes() -> str:
         return run_git("rev-parse", "HEAD").stdout.strip()
 
     run_git("add", "-A")
-    run_git("reset", "--", ".claude-templates/", check=False)
+    run_git("reset", "--", ".task-templates/", check=False)
 
     commit_message = f"""feat: {TASK_DESCRIPTION[:72]}
 
