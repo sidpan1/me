@@ -31,7 +31,7 @@ Enable AI coding agents to autonomously execute development tasks—accepting a 
 | **Task Storage** | JSON files (`/data/tasks/`) | One file per task containing status, input, output, timestamps. Survives service restart. |
 | **Sandbox** | Docker container | Isolated execution environment with Claude Code CLI pre-installed. Cold start on each task. |
 | **Agent** | Claude Code CLI | Runs with `--dangerously-skip-permissions` flag for autonomous operation. |
-| **Templates** | `.task-templates/` in target repo | Contains init.py specification for setup. CLAUDE.md and agent.md are optional. |
+| **Templates** | `.task-templates/` in target repo | Contains init.py specification for setup. |
 | **Git Operations** | Clone → Branch → Commit → Push | Full git workflow: clone target repo, create feature branch, commit changes, push to remote. |
 | **Workspace** | EFS persistent volume | Mounted per task, retains state across container restarts, enables debugging of failed tasks. |
 | **Status Tracking** | QUEUED → RUNNING → COMPLETED/FAILED | Simple state machine. Orchestrator updates status based on container exit code. |

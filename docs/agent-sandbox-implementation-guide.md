@@ -821,23 +821,18 @@ async def execute_claude_code(task_description: str) -> None:
 
 
 def _load_system_prompt(template_dir: Path) -> Optional[str]:
-    """Load system prompt from agent.md if it exists."""
-    agent_md = template_dir / "agent.md"
-    if agent_md.exists():
-        logger.info(f"Loading system prompt from: {agent_md}")
-        return agent_md.read_text()
-
+    """Load system prompt from template if it exists (implementation detail)."""
+    # System prompt loading is an implementation detail
+    # Templates can handle this in init.py if needed
     return None
 ```
 
-**Template Structure (Simplified):**
+**Template Structure (Pure Specification):**
 
 ```
 .task-templates/backend/
-├── scripts/
-│   └── init.py                   # ONLY SPECIFICATION - handles all setup
-├── agent.md                      # Optional: System prompt for the agent
-└── CLAUDE.md                     # Optional: Project context
+└── scripts/
+    └── init.py                   # ONLY SPECIFICATION - handles all setup
 ```
 
 **The init.py Specification:**
@@ -899,103 +894,6 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-
-**Example Agent System Prompt (`agent.md`):**
-
-Based on [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference), the `--system-prompt-file` flag accepts a markdown file with custom system instructions:
-
-```markdown
-# Backend API Development Agent
-
-You are a senior backend engineer specializing in Node.js/TypeScript API development.
-
-## Your Role
-
-- Design and implement secure, scalable RESTful APIs
-- Follow best practices for API design (versioning, error handling, validation)
-- Write comprehensive tests (unit, integration, e2e)
-- Implement proper authentication and authorization (JWT, OAuth)
-- Optimize database queries and implement caching strategies
-
-## Code Standards
-
-- Use TypeScript for type safety
-- Follow the repository's ESLint and Prettier configuration
-- Write JSDoc comments for public APIs
-- Implement proper error handling with custom error classes
-- Use dependency injection for testability
-
-## Security Requirements
-
-- Validate all input using Joi or Zod schemas
-- Sanitize user input to prevent XSS and SQL injection
-- Implement rate limiting on all endpoints
-- Use parameterized queries for database operations
-- Never log sensitive information (passwords, tokens, PII)
-
-## Testing Requirements
-
-- Maintain >80% code coverage
-- Write unit tests for business logic
-- Write integration tests for API endpoints
-- Use factories/fixtures for test data
-- Mock external dependencies
-
-## When You Receive a Task
-
-1. Understand the requirements and ask clarifying questions
-2. Review existing code patterns and architecture
-3. Design the solution following SOLID principles
-4. Implement with tests
-5. Run linters and tests before marking complete
-6. Document any new APIs or configuration
-```
-
-**Example Project Context (`CLAUDE.md`):**
-
-```markdown
-# Backend API Project
-
-## Architecture
-
-This is a Node.js/Express REST API using:
-- TypeScript
-- PostgreSQL (via Prisma ORM)
-- Redis for caching
-- Jest for testing
-- JWT authentication
-
-## Project Structure
-
-- `src/routes/` - API route definitions
-- `src/controllers/` - Request handlers
-- `src/services/` - Business logic
-- `src/models/` - Prisma schema
-- `src/middleware/` - Express middleware
-- `tests/` - Test files
-
-## Key Commands
-
-- `npm test` - Run tests
-- `npm run lint` - Run ESLint
-- `npm run migrate` - Run database migrations
-- `npm run dev` - Start development server
-
-## Important Context
-
-- All endpoints require JWT authentication except `/auth/login` and `/auth/register`
-- API versioning is done via URL path (e.g., `/api/v1/users`)
-- Rate limiting: 100 requests per 15 minutes per IP
-- Database migrations must be reversible
-```
-
-**Key Template Files:**
-
-| File | Purpose | Required |
-|------|---------|----------|
-| `scripts/init.py` | Template initialization (ONLY specification) | Yes |
-| `agent.md` | Defines the agent's role, expertise, and behavior | Optional |
-| `CLAUDE.md` | Provides project-specific context and commands | Optional |
 
 **Environment Variables Available in init.py:**
 
@@ -1251,22 +1149,16 @@ order-service/
 ├── src/
 ├── .task-templates/
 │   ├── default/
-│   │   ├── scripts/
-│   │   │   └── init.py          # ONLY SPECIFICATION
-│   │   ├── agent.md             # Optional: Agent system prompt
-│   │   └── CLAUDE.md            # Optional: Project context
+│   │   └── scripts/
+│   │       └── init.py          # ONLY SPECIFICATION
 │   │
 │   ├── backend/
-│   │   ├── scripts/
-│   │   │   └── init.py          # Backend initialization
-│   │   ├── agent.md
-│   │   └── CLAUDE.md
+│   │   └── scripts/
+│   │       └── init.py          # Backend initialization
 │   │
 │   └── frontend/
-│       ├── scripts/
-│       │   └── init.py          # Frontend initialization
-│       ├── agent.md
-│       └── CLAUDE.md
+│       └── scripts/
+│           └── init.py          # Frontend initialization
 └── README.md
 ```
 
@@ -1313,11 +1205,6 @@ def main():
 if __name__ == "__main__":
     main()
 ```
-
-**Optional Files:**
-
-1. **`agent.md`** - Defines the agent's role and behavior
-2. **`CLAUDE.md`** - Provides project-specific context
 
 **Template Selection:**
 
@@ -2321,11 +2208,9 @@ def run_template_init(template_dir: Path) -> None:
 
 
 def load_system_prompt(template_dir: Path) -> Optional[str]:
-    """Load system prompt from agent.md if exists."""
-    agent_md = template_dir / "agent.md"
-    if agent_md.exists():
-        logger.info(f"Loading system prompt from: {agent_md}")
-        return agent_md.read_text()
+    """Load system prompt if configured (implementation detail)."""
+    # System prompt loading is an implementation detail
+    # Templates can handle this in init.py if needed
     return None
 
 
