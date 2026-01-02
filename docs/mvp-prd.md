@@ -31,7 +31,7 @@ Enable AI coding agents to autonomously execute development tasks—accepting a 
 | **Task Storage** | JSON files (`/data/tasks/`) | One file per task containing status, input, output, timestamps. Survives service restart. |
 | **Sandbox** | Docker container | Isolated execution environment with Claude Code CLI pre-installed. Cold start on each task. |
 | **Agent** | Claude Code CLI | Runs with `--dangerously-skip-permissions` flag for autonomous operation. |
-| **Templates** | `.claude-templates/` in target repo | Claude Code plugin directories (CLAUDE.md, settings.json, skills, hooks, etc.) checked into each repo. |
+| **Templates** | `.claude-templates/` in target repo | Contains init.py specification for setup. CLAUDE.md and agent.md are optional. |
 | **Git Operations** | Clone → Branch → Commit → Push | Full git workflow: clone target repo, create feature branch, commit changes, push to remote. |
 | **Workspace** | EFS persistent volume | Mounted per task, retains state across container restarts, enables debugging of failed tasks. |
 | **Status Tracking** | QUEUED → RUNNING → COMPLETED/FAILED | Simple state machine. Orchestrator updates status based on container exit code. |
@@ -48,7 +48,7 @@ Enable AI coding agents to autonomously execute development tasks—accepting a 
 | FR-6 | Commit changes | Agent commits all changes (excluding template files) with descriptive message |
 | FR-7 | Push to remote | Agent pushes feature branch to GitHub |
 | FR-8 | Persist task state | Task survives service restart, can be queried after completion |
-| FR-9 | Template injection | Platform copies template from `.claude-templates/{name}/` to repo root before execution |
+| FR-9 | Template initialization | Platform executes `.claude-templates/{name}/scripts/init.py` before Claude Code execution |
 | FR-10 | Timeout handling | Tasks exceeding 30 minutes are terminated and marked FAILED |
 
 ### 2.3 Non-Functional Requirements
@@ -317,7 +317,7 @@ QUEUED ──▶ RUNNING ──▶ COMPLETED
 │  ┌─────────────────────────────────────────────────────────────────────┐│
 │  │     TARGET REPOS (e.g., github.com/swiggy/order-service)            ││
 │  │     ───────────────────────────────────────────────────────────     ││
-│  │     Contains: .claude-templates/ with Claude Code plugin configs    ││
+│  │     Contains: .claude-templates/ with init.py specification         ││
 │  │     Owned by: Repo teams (not platform team)                        ││
 │  └─────────────────────────────────────────────────────────────────────┘│
 │                                                                          │

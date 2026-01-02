@@ -724,43 +724,16 @@ def create_feature_branch() -> str:
 
 ### Implementation (Python + Claude Agent SDK)
 
-The Claude Agent SDK (`claude-agent-sdk`) replaces CLI invocation with programmatic control. **Key advantage: Plugins can be loaded directly by path without copying.**
+The Claude Agent SDK (`claude-agent-sdk`) replaces CLI invocation with programmatic control.
 
 ```python
 # docker/execute.py (continued)
 
-def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
-    """
-    Discover plugins in template directory.
-
-    The Claude Agent SDK can load plugins directly by path,
-    eliminating the need to copy files or install via marketplace.
-
-    Args:
-        template_dir: Path to template directory
-
-    Returns:
-        List of plugin configurations for ClaudeAgentOptions
-    """
-    plugins = []
-    plugins_dir = template_dir / "plugins"
-
-    if plugins_dir.exists():
-        for plugin_path in plugins_dir.iterdir():
-            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
-                logger.info(f"Discovered plugin: {plugin_path.name}")
-                # SDK loads plugins directly by path - NO COPYING NEEDED
-                plugins.append({
-                    "type": "local",
-                    "path": str(plugin_path)
-                })
-
-    return plugins
-
-
 def run_template_init(template_dir: Path) -> None:
     """
     Run template initialization script (Python version).
+
+    This is the ONLY specification for templates - init.py handles all setup.
 
     Args:
         template_dir: Path to template directory
@@ -768,25 +741,13 @@ def run_template_init(template_dir: Path) -> None:
     Raises:
         TemplateInitError: If initialization fails
     """
-    # Check for Python init script first, then fall back to bash
+    # Check for Python init script (preferred)
     init_py = template_dir / "scripts" / "init.py"
-    init_sh = template_dir / "scripts" / "init.sh"
 
     if init_py.exists():
-        logger.info(f"Running Python initialization: {init_py}")
+        logger.info(f"Running initialization: {init_py}")
         result = subprocess.run(
             [sys.executable, str(init_py)],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
-        )
-        if result.returncode != 0:
-            raise TemplateInitError(f"Init script failed: {result.stderr}")
-    elif init_sh.exists():
-        logger.info(f"Running bash initialization: {init_sh}")
-        result = subprocess.run(
-            ["bash", str(init_sh)],
             cwd=REPO_DIR,
             capture_output=True,
             text=True,
@@ -804,7 +765,6 @@ async def execute_claude_code(task_description: str) -> None:
 
     Key benefits over CLI:
     - In-process execution (no subprocess overhead)
-    - Direct plugin loading by path (no copying/installation)
     - Typed responses and error handling
     - Custom hooks for permission control
     - Better streaming output handling
@@ -819,14 +779,10 @@ async def execute_claude_code(task_description: str) -> None:
 
     template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
 
-    # Run template initialization (dependencies, settings)
+    # Run template initialization - this is the only template specification
+    # init.py handles everything (dependencies, settings, etc.)
     if template_dir.exists():
         run_template_init(template_dir)
-
-    # Discover plugins directly from template directory
-    # NO COPYING NEEDED - SDK loads by path
-    plugins = discover_plugins(template_dir)
-    logger.info(f"Loading {len(plugins)} plugins directly from template")
 
     # Build SDK options
     options = ClaudeAgentOptions(
@@ -839,9 +795,6 @@ async def execute_claude_code(task_description: str) -> None:
 
         # Allowed tools (can be customized per template)
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch"],
-
-        # Load plugins directly by path - KEY FEATURE
-        plugins=plugins,
 
         # System prompt from template
         system_prompt=_load_system_prompt(template_dir),
@@ -874,121 +827,39 @@ def _load_system_prompt(template_dir: Path) -> Optional[str]:
         logger.info(f"Loading system prompt from: {agent_md}")
         return agent_md.read_text()
 
-    # Also check .claude/agent.md
-    agent_md_alt = REPO_DIR / ".claude" / "agent.md"
-    if agent_md_alt.exists():
-        logger.info(f"Loading system prompt from: {agent_md_alt}")
-        return agent_md_alt.read_text()
-
     return None
 ```
 
-**Template Structure (Updated for Python):**
+**Template Structure (Simplified):**
 
 ```
 .claude-templates/backend/
-├── plugins/                      # Plugins loaded DIRECTLY by SDK
-│   ├── test-runner/
-│   │   ├── .claude-plugin/
-│   │   │   └── plugin.json
-│   │   ├── skills/
-│   │   └── commands/
-│   └── code-quality/
-│       └── ...
 ├── scripts/
-│   └── init.py                   # Python initialization script
-├── agent.md                      # System prompt for the agent
-├── CLAUDE.md                     # Project context (auto-read)
-└── settings.json                 # Additional settings
+│   └── init.py                   # ONLY SPECIFICATION - handles all setup
+├── agent.md                      # Optional: System prompt for the agent
+└── CLAUDE.md                     # Optional: Project context
 ```
 
-**Key Difference: Direct Plugin Loading from Template Path**
+**The init.py Specification:**
 
-The Claude Agent SDK loads plugins **directly from `.claude-templates/{template}/plugins/`** - no copying, no installation, no marketplace required!
+The `init.py` script is the **only specification** for templates. It handles all setup including:
+- Installing dependencies
+- Configuring the environment
+- Any other custom initialization
 
-```python
-# ============================================
-# DIRECT PLUGIN LOADING FROM TEMPLATE
-# ============================================
-
-# Template structure in repository:
-# .claude-templates/backend/plugins/
-#   ├── test-runner/
-#   │   ├── .claude-plugin/plugin.json
-#   │   └── skills/run-tests/SKILL.md
-#   ├── code-quality/
-#   │   ├── .claude-plugin/plugin.json
-#   │   └── commands/lint.md
-#   └── api-generator/
-#       ├── .claude-plugin/plugin.json
-#       └── agents/api-builder.md
-
-def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
-    """
-    Discover and load ALL plugins from template/plugins directory.
-
-    The SDK loads these directly by absolute path - no copying needed!
-    """
-    plugins = []
-    plugins_dir = template_dir / "plugins"
-
-    if plugins_dir.exists():
-        for plugin_path in plugins_dir.iterdir():
-            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
-                # Direct path loading - SDK reads from this exact location
-                plugins.append({
-                    "type": "local",
-                    "path": str(plugin_path.absolute())  # e.g., /workspace/repo/.claude-templates/backend/plugins/test-runner
-                })
-
-    return plugins
-
-# Example output from discover_plugins():
-# [
-#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/test-runner"},
-#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/code-quality"},
-#   {"type": "local", "path": "/workspace/repo/.claude-templates/backend/plugins/api-generator"},
-# ]
-
-# Pass directly to ClaudeAgentOptions - SDK loads from these paths!
-options = ClaudeAgentOptions(
-    plugins=discover_plugins(template_dir),  # All plugins from template
-    permission_mode='acceptEdits',
-)
-```
-
-**Comparison: Old vs New Approach**
-
-| Aspect | Old (Bash) | New (Python SDK) |
-|--------|-----------|------------------|
-| Plugin location | Copy to `~/.claude/plugins/` | **Stay in template directory** |
-| Loading method | `claude --plugin-dir` or marketplace | `plugins=[{"type": "local", "path": "..."}]` |
-| File operations | `cp`, `mkdir`, symlinks | **None - direct path reference** |
-| Cleanup needed | Yes (remove copied files) | **No** |
-| Template isolation | Plugins shared globally | **Plugins isolated per template** |
-
-**Initialization Script (`scripts/init.py`):**
-
-Note: This script **only handles dependencies and settings** - plugins are loaded directly by the SDK from their template paths!
+**Implementation details (like plugins, settings, etc.) are handled inside init.py and are not part of the public specification.**
 
 ```python
 #!/usr/bin/env python3
 """
-Template initialization script (Python version).
+Template initialization script.
 
-IMPORTANT: This script does NOT handle plugins!
-Plugins are loaded DIRECTLY by the Claude Agent SDK from:
-  .claude-templates/{template}/plugins/
-
-This script only handles:
-  1. Project dependencies (npm install, pip install)
-  2. Claude Code settings (.claude/settings.json)
-  3. Project context files (CLAUDE.md, agent.md)
+This is the ONLY specification for templates.
+Handle all setup logic here.
 """
 
 import os
 import sys
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -999,11 +870,11 @@ TEMPLATE_ROOT = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
 
 def main():
     print("=" * 50)
-    print("Template Initialization (Python)")
+    print("Template Initialization")
     print("=" * 50)
 
     # 1. Install project dependencies
-    print("\n[1/3] Installing project dependencies...")
+    print("\n[1/2] Installing project dependencies...")
     if (REPO_DIR / "package.json").exists():
         subprocess.run(["npm", "install"], cwd=REPO_DIR, check=True)
         print("  ✓ npm dependencies installed")
@@ -1012,38 +883,16 @@ def main():
                       cwd=REPO_DIR, check=True)
         print("  ✓ pip dependencies installed")
     else:
-        print("  (no package.json or requirements.txt found)")
+        print("  (no dependencies found)")
 
-    # 2. Configure Claude Code settings
-    print("\n[2/3] Configuring Claude Code...")
-    claude_dir = REPO_DIR / ".claude"
-    claude_dir.mkdir(exist_ok=True)
-
-    for src, dst, desc in [
-        (TEMPLATE_ROOT / "settings.json", claude_dir / "settings.json", "settings"),
-        (TEMPLATE_ROOT / "CLAUDE.md", REPO_DIR / "CLAUDE.md", "project context"),
-        (TEMPLATE_ROOT / "agent.md", claude_dir / "agent.md", "system prompt"),
-    ]:
-        if src.exists():
-            shutil.copy(src, dst)
-            print(f"  ✓ Copied {desc}")
-
-    # 3. List plugins (for logging only - SDK loads them directly!)
-    print("\n[3/3] Plugins in template (loaded directly by SDK)...")
-    plugins_dir = TEMPLATE_ROOT / "plugins"
-    if plugins_dir.exists():
-        for plugin in plugins_dir.iterdir():
-            if plugin.is_dir() and (plugin / ".claude-plugin").exists():
-                # Just logging - NO COPYING! SDK loads from this path directly
-                print(f"  → {plugin.name} @ {plugin}")
-    else:
-        print("  (no plugins directory)")
+    # 2. Any additional setup (implementation detail)
+    print("\n[2/2] Running additional setup...")
+    # Add any custom initialization logic here
+    # This is an implementation detail and can be anything
+    print("  ✓ Setup complete")
 
     print("\n" + "=" * 50)
     print("Initialization Complete")
-    print("")
-    print("NOTE: Plugins are NOT copied or installed!")
-    print("      SDK loads directly from: .claude-templates/{template}/plugins/")
     print("=" * 50)
 
 
@@ -1140,109 +989,22 @@ This is a Node.js/Express REST API using:
 - Database migrations must be reversible
 ```
 
-**Key Differences:**
+**Key Template Files:**
 
-| File | Purpose | Passed To Claude Code |
-|------|---------|----------------------|
-| `agent.md` | Defines the agent's role, expertise, and behavior | Via `--system-prompt-file` flag |
-| `CLAUDE.md` | Provides project-specific context and commands | Auto-read from project root |
-| `settings.json` | Configures plugins, linters, formatters | Via `.claude/settings.json` |
+| File | Purpose | Required |
+|------|---------|----------|
+| `scripts/init.py` | Template initialization (ONLY specification) | Yes |
+| `agent.md` | Defines the agent's role, expertise, and behavior | Optional |
+| `CLAUDE.md` | Provides project-specific context and commands | Optional |
 
-**Plugin Structure (Official Format):**
+**Environment Variables Available in init.py:**
 
-Based on [Claude Code Plugin Documentation](https://code.claude.com/docs/en/plugins), each plugin follows this structure:
-
-```bash
-# Example: .claude-templates/backend/plugins/test-runner/
-test-runner/
-├── .claude-plugin/
-│   └── plugin.json           # Required: Plugin metadata
-├── commands/                  # Optional: Slash commands
-│   └── test.md               # /test command
-├── agents/                    # Optional: Specialized agents
-│   └── test-analyzer.md
-├── skills/                    # Optional: Auto-invoked skills
-│   └── run-tests/
-│       └── SKILL.md
-├── hooks/                     # Optional: Event handlers
-│   └── hooks.json
-├── .mcp.json                 # Optional: MCP server config
-└── README.md
-```
-
-**Plugin Metadata (`plugin.json`):**
-
-```json
-{
-  "name": "test-runner",
-  "version": "1.0.0",
-  "description": "Automatically runs tests for backend services",
-  "author": "Backend Team",
-  "tags": ["testing", "backend", "nodejs"],
-  "commands": {
-    "test": "commands/test.md"
-  },
-  "skills": {
-    "run-tests": "skills/run-tests"
-  },
-  "hooks": "hooks/hooks.json"
-}
-```
-
-**settings.json (with Plugin Marketplace References):**
-
-Based on [Claude Code plugin documentation](https://code.claude.com/docs/en/plugins), plugins are configured via marketplace references:
-
-```json
-{
-  "preferredLanguages": ["typescript", "javascript"],
-  "testFramework": "jest",
-  "linter": "eslint",
-  "formatter": "prettier",
-  "autoFormat": true,
-  "marketplaces": [
-    {
-      "url": "https://github.com/your-org/backend-plugins",
-      "type": "github"
-    }
-  ],
-  "plugins": [
-    "test-runner@your-org/backend-plugins",
-    "code-quality@your-org/backend-plugins",
-    "api-generator@your-org/backend-plugins"
-  ]
-}
-```
-
-**Key Details:**
-
-1. **Plugin Installation Location:**
-   - Plugins install to `~/.claude/plugins/marketplaces/` ([source](https://claudelog.com/faqs/where-is-claude-code-installed/))
-   - Organized by marketplace: `~/.claude/plugins/marketplaces/{marketplace-name}/`
-   - Commands symlinked to `~/.claude/commands/`
-
-2. **Plugin Configuration Methods:**
-   - **Project-level**: `.claude/settings.json` (checked into git, shared with team)
-   - **User-level**: `~/.claude/settings.json` (global settings)
-   - **Personal**: `.claude/settings.local.json` (not checked into git)
-
-3. **Plugin Loading:**
-   - Claude Code auto-installs plugins from marketplaces on startup
-   - Plugins referenced in `settings.json` are downloaded if missing
-   - No manual installation needed in init script
-
-4. **--plugin-dir Flag:**
-   - Used ONLY for plugin development/testing ([source](https://code.claude.com/docs/en/plugins))
-   - Loads plugin directly without installation
-   - NOT for production use
-
-5. **Environment Variables Available:**
-   - `TASK_ID`: Unique task identifier
-   - `TASK_DESCRIPTION`: User-provided task description
-   - `REPO_DIR`: Repository directory path
-   - `TASK_TEMPLATE`: Template name
-   - `ANTHROPIC_API_KEY`: Claude API key
-   - `GITHUB_TOKEN`: Git authentication token
+- `TASK_ID`: Unique task identifier
+- `TASK_DESCRIPTION`: User-provided task description
+- `REPO_DIR`: Repository directory path
+- `TASK_TEMPLATE`: Template name
+- `ANTHROPIC_API_KEY`: Claude API key
+- `GITHUB_TOKEN`: Git authentication token
 
 ---
 
@@ -1475,13 +1237,13 @@ spec:
 ---
 
 ## FR-9: Template structure
-**Requirement:** Templates define plugins, initialization scripts, and Claude Code configuration
+**Requirement:** Templates define initialization logic and Claude Code configuration
 
 ### Implementation
 
-Templates are **checked into each target repository** at `.claude-templates/{template-name}/` and contain Claude Code plugins and initialization scripts.
+Templates are **checked into each target repository** at `.claude-templates/{template-name}/`.
 
-**Complete Template Structure:**
+**Template Structure (Simplified):**
 
 ```bash
 # Target repo (e.g., github.com/swiggy/order-service)
@@ -1489,243 +1251,84 @@ order-service/
 ├── src/
 ├── .claude-templates/
 │   ├── default/
-│   │   ├── plugins/              # Claude Code plugins
 │   │   ├── scripts/
-│   │   │   └── init.sh          # Initialization script
-│   │   ├── CLAUDE.md            # Instructions for Claude
-│   │   └── settings.json        # Claude Code settings
+│   │   │   └── init.py          # ONLY SPECIFICATION
+│   │   ├── agent.md             # Optional: Agent system prompt
+│   │   └── CLAUDE.md            # Optional: Project context
 │   │
 │   ├── backend/
-│   │   ├── plugins/              # Backend-specific plugins
-│   │   │   ├── test-runner/      # Plugin: Automated testing
-│   │   │   │   ├── .claude-plugin/
-│   │   │   │   │   └── plugin.json
-│   │   │   │   ├── skills/
-│   │   │   │   │   └── run-tests/
-│   │   │   │   │       └── SKILL.md
-│   │   │   │   └── README.md
-│   │   │   │
-│   │   │   ├── code-quality/     # Plugin: Linting & formatting
-│   │   │   │   ├── .claude-plugin/
-│   │   │   │   │   └── plugin.json
-│   │   │   │   ├── commands/
-│   │   │   │   │   ├── lint.md
-│   │   │   │   │   └── format.md
-│   │   │   │   └── hooks/
-│   │   │   │       └── hooks.json
-│   │   │   │
-│   │   │   └── api-generator/    # Plugin: API scaffolding
-│   │   │       ├── .claude-plugin/
-│   │   │       │   └── plugin.json
-│   │   │       ├── agents/
-│   │   │       │   └── api-builder.md
-│   │   │       └── skills/
-│   │   │           └── generate-endpoint/
-│   │   │               └── SKILL.md
-│   │   │
 │   │   ├── scripts/
-│   │   │   └── init.sh          # Backend initialization
-│   │   ├── CLAUDE.md
-│   │   └── settings.json
+│   │   │   └── init.py          # Backend initialization
+│   │   ├── agent.md
+│   │   └── CLAUDE.md
 │   │
 │   └── frontend/
-│       ├── plugins/              # Frontend-specific plugins
-│       │   ├── component-generator/
-│       │   │   ├── .claude-plugin/
-│       │   │   │   └── plugin.json
-│       │   │   └── skills/
-│       │   │       └── create-component/
-│       │   │           └── SKILL.md
-│       │   └── style-helper/
-│       │       ├── .claude-plugin/
-│       │       │   └── plugin.json
-│       │       └── commands/
-│       │           └── theme.md
 │       ├── scripts/
-│       │   └── init.sh          # Frontend initialization
-│       ├── CLAUDE.md
-│       └── settings.json
+│       │   └── init.py          # Frontend initialization
+│       ├── agent.md
+│       └── CLAUDE.md
 └── README.md
 ```
 
-**Template Components:**
+**Key Specification: `scripts/init.py`**
 
-### 1. `plugins/` Directory
-Contains Claude Code plugins following the [official plugin structure](https://code.claude.com/docs/en/plugins).
+The `init.py` script is the **ONLY specification** for templates. All other implementation details (plugins, settings, etc.) are handled internally by init.py.
 
-**Example Plugin: test-runner**
+**Example init.py:**
 
-```bash
-.claude-templates/backend/plugins/test-runner/
-├── .claude-plugin/
-│   └── plugin.json           # Required metadata
-├── commands/                  # Slash commands
-│   └── test.md
-├── agents/                    # Specialized agents
-│   └── test-analyzer.md
-├── skills/                    # Auto-invoked skills
-│   └── run-tests/
-│       └── SKILL.md
-├── hooks/                     # Event handlers
-│   └── hooks.json
-└── README.md
+```python
+#!/usr/bin/env python3
+"""
+Template initialization - THE ONLY SPECIFICATION.
+All implementation details are handled here.
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_DIR = Path(os.environ.get("REPO_DIR", "."))
+TASK_TEMPLATE = os.environ.get("TASK_TEMPLATE", "backend")
+
+
+def main():
+    print("=" * 50)
+    print("Template Initialization")
+    print("=" * 50)
+
+    # Install dependencies
+    print("\nInstalling dependencies...")
+    if (REPO_DIR / "package.json").exists():
+        subprocess.run(["npm", "install"], cwd=REPO_DIR, check=True)
+    elif (REPO_DIR / "requirements.txt").exists():
+        subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                      cwd=REPO_DIR, check=True)
+
+    # Any additional setup is an implementation detail
+    # (plugins, settings, environment config, etc.)
+    print("\nSetup complete")
+
+
+if __name__ == "__main__":
+    main()
 ```
 
-**plugin.json:**
-```json
-{
-  "name": "test-runner",
-  "version": "1.0.0",
-  "description": "Automated testing for backend services",
-  "author": "Backend Team",
-  "tags": ["testing", "backend"],
-  "commands": {
-    "test": "commands/test.md"
-  },
-  "skills": {
-    "run-tests": "skills/run-tests"
-  },
-  "hooks": "hooks/hooks.json"
-}
-```
+**Optional Files:**
 
-**SKILL.md Example:**
-```markdown
-# Run Tests Skill
+1. **`agent.md`** - Defines the agent's role and behavior
+2. **`CLAUDE.md`** - Provides project-specific context
 
-This skill automatically runs tests based on the code changes.
+**Template Selection:**
 
-## When to Use
-- After implementing new features
-- When modifying existing code
-- Before committing changes
+- API request specifies: `"task_template": "backend"`
+- Platform sets: `TASK_TEMPLATE=backend`
+- Executes: `.claude-templates/backend/scripts/init.py`
 
-## How it Works
-1. Detects test files in the project
-2. Runs appropriate test command (npm test, pytest, etc.)
-3. Reports results and failures
-```
+**Fallback Behavior:**
 
-### 2. `scripts/init.sh` (Initialization Script)
-Runs before Claude Code execution to install plugins and set up environment.
-
-```bash
-#!/bin/bash
-# .claude-templates/backend/scripts/init.sh
-set -e
-
-echo "==================================="
-echo "Backend Template Initialization"
-echo "==================================="
-
-TEMPLATE_ROOT="$REPO_DIR/.claude-templates/$TASK_TEMPLATE"
-PLUGINS_DIR="$TEMPLATE_ROOT/plugins"
-
-# 1. Install project dependencies
-echo "[1/4] Installing dependencies..."
-npm install
-
-# 2. Install all Claude Code plugins
-echo "[2/4] Installing Claude Code plugins..."
-if [ -d "$PLUGINS_DIR" ]; then
-    for plugin_path in "$PLUGINS_DIR"/*; do
-        if [ -d "$plugin_path/.claude-plugin" ]; then
-            plugin_name=$(basename "$plugin_path")
-            echo "  → Installing plugin: $plugin_name"
-            claude --plugin-dir "$plugin_path" --install-plugin
-        fi
-    done
-    echo "  ✓ All plugins installed"
-fi
-
-# 3. Run code quality checks
-echo "[3/4] Running code quality checks..."
-npm run lint || echo "  Warning: Linting failed"
-
-# 4. Verify environment
-echo "[4/4] Verifying environment..."
-node --version
-npm --version
-claude --version
-
-echo "==================================="
-echo "Initialization Complete"
-echo "==================================="
-```
-
-### 3. `CLAUDE.md` (Instructions)
-Context and instructions for Claude Code.
-
-```markdown
-# Backend Development Template
-
-## Project Context
-Node.js backend service using Express and PostgreSQL.
-
-## Coding Standards
-- TypeScript with strict mode
-- Airbnb style guide
-- 100% test coverage for business logic
-- Async/await pattern
-
-## Architecture
-- Controllers in `src/controllers/`
-- Services in `src/services/`
-- Models in `src/models/`
-- Routes in `src/routes/`
-
-## Available Plugins
-- **test-runner**: Use `/test` to run tests
-- **code-quality**: Use `/lint` to check code quality
-- **api-generator**: Automatically scaffolds REST endpoints
-```
-
-### 4. `settings.json` (Configuration)
-Claude Code settings for this template.
-
-```json
-{
-  "preferredLanguages": ["typescript", "javascript"],
-  "testFramework": "jest",
-  "linter": "eslint",
-  "formatter": "prettier",
-  "autoFormat": true,
-  "plugins": {
-    "enabled": true,
-    "autoLoad": ["test-runner", "code-quality", "api-generator"]
-  }
-}
-```
-
-**Key Details:**
-
-1. **Plugin Management:**
-   - Plugins stored in `.claude-templates/{template}/plugins/`
-   - Each plugin follows [official Claude Code plugin format](https://github.com/anthropics/claude-code/blob/main/plugins/README.md)
-   - Installed automatically by `scripts/init.sh`
-   - Available immediately when Claude Code runs
-
-2. **Template Selection:**
-   - API request specifies: `"task_template": "backend"`
-   - Platform sets: `TASK_TEMPLATE=backend`
-   - Init script runs: `.claude-templates/backend/scripts/init.sh`
-
-3. **Plugin Types:**
-   - **Commands**: Slash commands like `/test`, `/lint`
-   - **Agents**: Specialized AI assistants for specific tasks
-   - **Skills**: Auto-invoked capabilities (run tests, generate code)
-   - **Hooks**: Event handlers (pre-commit, post-commit, etc.)
-
-4. **Template Ownership:**
-   - Managed by repo teams, not platform team
-   - Teams can add/remove plugins as needed
-   - Version controlled with application code
-   - Changes deployed automatically (cloned with repo)
-
-5. **Fallback Behavior:**
-   - If no `scripts/init.sh`, skips plugin installation
-   - Claude Code still runs with task description
-   - Uses default behavior without custom plugins
+- If no `scripts/init.py` exists, initialization is skipped
+- Claude Code runs with just the task description
 
 ---
 
@@ -2491,11 +2094,9 @@ aws logs filter-log-events \
 """
 docker/execute.py - Complete end-to-end task execution using Claude Agent SDK.
 
-This script replaces the bash execute.sh with a type-safe Python implementation
-that uses the Claude Agent SDK for programmatic Claude Code execution.
+This script uses the Claude Agent SDK for programmatic Claude Code execution.
 
 Key Benefits:
-- Direct plugin loading by path (no copying/installation)
 - Type-safe Claude Agent SDK integration
 - Better error handling with custom exceptions
 - Structured logging
@@ -2693,50 +2294,18 @@ def create_feature_branch() -> str:
 
 
 # ============================================
-# Plugin Discovery (Direct Loading)
-# ============================================
-
-def discover_plugins(template_dir: Path) -> List[Dict[str, Any]]:
-    """
-    Discover ALL plugins from .claude-templates/{template}/plugins/ directory.
-
-    The Claude Agent SDK loads plugins DIRECTLY by absolute path -
-    no copying, no marketplace installation, no file operations needed!
-
-    Example paths returned:
-      /workspace/repo/.claude-templates/backend/plugins/test-runner
-      /workspace/repo/.claude-templates/backend/plugins/code-quality
-      /workspace/repo/.claude-templates/backend/plugins/api-generator
-    """
-    plugins = []
-    plugins_dir = template_dir / "plugins"
-
-    if plugins_dir.exists():
-        for plugin_path in plugins_dir.iterdir():
-            if plugin_path.is_dir() and (plugin_path / ".claude-plugin" / "plugin.json").exists():
-                # Use ABSOLUTE path - SDK loads directly from this location
-                absolute_path = str(plugin_path.absolute())
-                logger.info(f"  → Plugin: {plugin_path.name} @ {absolute_path}")
-                plugins.append({
-                    "type": "local",
-                    "path": absolute_path
-                })
-
-    logger.info(f"  Total: {len(plugins)} plugins discovered (loaded directly, no copying)")
-    return plugins
-
-
-# ============================================
 # Template Initialization
 # ============================================
 
 def run_template_init(template_dir: Path) -> None:
-    """Run template initialization script."""
+    """
+    Run template initialization script - THE ONLY SPECIFICATION.
+    All setup (dependencies, settings, etc.) is handled by init.py.
+    """
     init_py = template_dir / "scripts" / "init.py"
-    init_sh = template_dir / "scripts" / "init.sh"
 
     if init_py.exists():
-        logger.info(f"Running Python init: {init_py}")
+        logger.info(f"Running initialization: {init_py}")
         result = subprocess.run(
             [sys.executable, str(init_py)],
             cwd=REPO_DIR,
@@ -2746,25 +2315,17 @@ def run_template_init(template_dir: Path) -> None:
         )
         if result.returncode != 0:
             raise TemplateInitError(f"Init failed: {result.stderr}")
-    elif init_sh.exists():
-        logger.info(f"Running bash init: {init_sh}")
-        result = subprocess.run(
-            ["bash", str(init_sh)],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "REPO_DIR": str(REPO_DIR), "TASK_TEMPLATE": TASK_TEMPLATE}
-        )
-        if result.returncode != 0:
-            raise TemplateInitError(f"Init failed: {result.stderr}")
+        logger.info("Template initialization complete")
+    else:
+        logger.info("No init.py found, skipping template initialization")
 
 
 def load_system_prompt(template_dir: Path) -> Optional[str]:
     """Load system prompt from agent.md if exists."""
-    for path in [template_dir / "agent.md", REPO_DIR / ".claude" / "agent.md"]:
-        if path.exists():
-            logger.info(f"Loading system prompt from: {path}")
-            return path.read_text()
+    agent_md = template_dir / "agent.md"
+    if agent_md.exists():
+        logger.info(f"Loading system prompt from: {agent_md}")
+        return agent_md.read_text()
     return None
 
 
@@ -2775,31 +2336,23 @@ def load_system_prompt(template_dir: Path) -> Optional[str]:
 async def execute_claude_code(task_description: str) -> None:
     """
     FR-5: Execute Claude Code using the Agent SDK.
-
-    Key advantage: Plugins are loaded DIRECTLY by path without copying!
     """
     logger.info("Step 4: Executing Claude Code via Agent SDK")
 
     template_dir = REPO_DIR / ".claude-templates" / TASK_TEMPLATE
 
-    # Run template initialization
+    # Run template initialization - handles all setup
     if template_dir.exists():
         logger.info("Step 3: Initializing template")
         run_template_init(template_dir)
-        logger.info("Template initialized successfully")
     else:
         logger.info("Step 3: No template found, skipping initialization")
-
-    # Discover plugins - SDK loads them DIRECTLY by path
-    plugins = discover_plugins(template_dir)
-    logger.info(f"Loading {len(plugins)} plugins directly (no copying needed)")
 
     # Build SDK options
     options = ClaudeAgentOptions(
         cwd=str(REPO_DIR),
         permission_mode='acceptEdits',  # Replaces --dangerously-skip-permissions
         allowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebFetch"],
-        plugins=plugins,  # Direct path loading!
         system_prompt=load_system_prompt(template_dir),
         add_dirs=[str(REPO_DIR)],
     )
@@ -2894,7 +2447,7 @@ async def main():
         # FR-4: Create feature branch
         create_feature_branch()
 
-        # FR-5: Execute Claude Code (with plugin discovery)
+        # FR-5: Execute Claude Code
         await execute_claude_code(TASK_DESCRIPTION)
 
         # FR-6: Commit changes
