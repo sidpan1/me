@@ -4,11 +4,7 @@ Projects that started here and moved to their own repositories.
 
 ## Active Repositories
 
-### bengaluru-restoration-project
-- **Status**: In development
-- **Description**: Bengaluru restoration project
-- **Repository**: TBD (to be created on GitHub)
-- **Graduated**: 2026-01-04
+*No graduated projects yet.*
 
 ---
 
