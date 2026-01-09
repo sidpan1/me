@@ -1,0 +1,12 @@
+{
+  "videos": [],
+  "summary": {
+    "total_videos": 0,
+    "total_views": 0,
+    "avg_retention": 0.0,
+    "avg_engagement": 0.0,
+    "best_performing_theme": null,
+    "best_performing_language": null
+  },
+  "last_updated": null
+}

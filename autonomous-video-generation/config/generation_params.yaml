@@ -1,0 +1,109 @@
+# Video Generation Parameters
+
+video:
+  duration: 30  # seconds (target, actual may vary 25-30s)
+  resolution:
+    width: 1080
+    height: 1920  # 9:16 aspect ratio
+  fps: 30
+  format: mp4
+  codec: h264
+  audio_codec: aac
+  audio_bitrate: 192  # kbps
+
+content:
+  theme: "satisfying"  # Current theme
+  target_audience: "indian_consumers"
+  primary_language: "hindi"
+  secondary_languages: ["english", "hinglish"]
+
+  # Satisfying video elements
+  elements:
+    - smooth_movements
+    - perfect_loops
+    - symmetrical_compositions
+    - transformation_reveals
+    - rhythmic_repetition
+    - asmr_sounds
+
+script:
+  hook_duration: 3  # seconds - CRITICAL
+  pattern_interrupt_interval: 4  # seconds
+  target_retention: 0.65  # 65% completion rate
+
+  structure:
+    hook: "0-3s"
+    reveal: "3-10s"
+    escalation: "10-20s"
+    payoff: "20-25s"
+    cta: "25-30s"
+
+assets:
+  video_clips: 4  # number of Veo 3 clips to generate
+  clip_duration: 8  # seconds each
+  images: 2  # optional images for transitions
+  quality_tier: "fast"  # Options: fast ($0.40), quality ($2.00)
+
+audio:
+  voiceover: false  # Set true if narration needed
+  music: true
+  sound_effects: true
+
+  levels:
+    dialogue_lufs: -14
+    music_lufs: -20
+    sfx_lufs: -18
+
+editing:
+  jump_cut_interval: 3  # seconds - cut every 2-3s
+  beat_sync: true  # sync cuts to music beats
+  text_overlays: true
+  captions: true  # auto-generated from script
+
+  transitions:
+    - zoom_in
+    - zoom_out
+    - color_shift
+    - speed_ramp
+
+publishing:
+  platform: "youtube"
+  schedule: "auto"  # or specific time "18:00 IST"
+  privacy: "public"
+  category: "Entertainment"
+
+  optimal_times_ist:  # Best posting times for India
+    - "07:00"  # Morning commute
+    - "13:00"  # Lunch break
+    - "19:00"  # Evening peak (BEST)
+    - "21:00"  # Night browsing
+
+analytics:
+  collection_delay: 24  # hours after upload
+  metrics:
+    primary:
+      - average_view_duration
+      - retention_rate
+      - engagement_rate
+      - ctr
+    secondary:
+      - views_24h
+      - likes
+      - comments
+      - shares
+      - watch_time
+
+optimization:
+  ab_testing: true
+  min_videos_before_insights: 7
+  performance_threshold: 5.0  # minimum score to consider successful
+
+  improvement_triggers:
+    low_retention: 0.40  # If retention < 40%, adjust pacing
+    low_engagement: 0.03  # If engagement < 3%, improve CTA
+    low_ctr: 0.05  # If CTR < 5%, improve thumbnail/title
+
+budget:
+  monthly_limit: 100  # USD
+  per_video_target: 2.00  # USD
+  quality_upgrade_threshold: 10  # videos with >8 score get quality tier
