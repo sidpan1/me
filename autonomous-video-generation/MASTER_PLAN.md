@@ -518,71 +518,182 @@ score = (
 
 ### File Structure
 
+**CORRECTED ARCHITECTURE**: Skills are self-contained bundles with documentation AND code together.
+
 ```
 autonomous-video-generation/
 ├── .claude/
-│   ├── skills/
-│   │   ├── idea-generator.md
-│   │   ├── script-writer.md
-│   │   ├── scene-planner.md
-│   │   ├── remotion-assembler.md
-│   │   ├── analytics-collector.md
-│   │   └── performance-analyzer.md
-│   ├── hooks/
+│   ├── skills/                          # Self-contained skill bundles
+│   │   ├── idea-generator/
+│   │   │   ├── SKILL.md                 # Skill documentation & workflow
+│   │   │   ├── scripts/                 # Executable code
+│   │   │   │   ├── generate_ideas.py
+│   │   │   │   ├── trend_analyzer.py
+│   │   │   │   └── api_clients/         # API wrappers used by this skill
+│   │   │   │       ├── youtube_trends.py
+│   │   │   │       └── anthropic_client.py
+│   │   │   ├── references/              # Detailed documentation
+│   │   │   │   ├── satisfying-patterns.md
+│   │   │   │   └── indian-preferences.md
+│   │   │   └── assets/                  # Output templates
+│   │   │       └── idea-template.json
+│   │   │
+│   │   ├── script-writer/
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/
+│   │   │   │   ├── write_script.py
+│   │   │   │   └── timing_calculator.py
+│   │   │   ├── references/
+│   │   │   │   ├── hook-formulas.md
+│   │   │   │   └── script-examples.md
+│   │   │   └── assets/
+│   │   │       └── script-template.md
+│   │   │
+│   │   ├── scene-planner/
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/
+│   │   │   │   ├── plan_scenes.py
+│   │   │   │   └── storyboard_generator.py
+│   │   │   ├── references/
+│   │   │   │   ├── composition-guide.md
+│   │   │   │   └── transition-catalog.md
+│   │   │   └── assets/
+│   │   │       └── storyboard-template.json
+│   │   │
+│   │   ├── asset-generator/
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/
+│   │   │   │   ├── generate_assets.py
+│   │   │   │   ├── api_clients/         # AI service clients
+│   │   │   │   │   ├── veo3_client.py
+│   │   │   │   │   ├── elevenlabs_client.py
+│   │   │   │   │   ├── dalle_client.py
+│   │   │   │   │   └── soundverse_client.py
+│   │   │   │   └── audio_mixer.py
+│   │   │   ├── references/
+│   │   │   │   ├── api-documentation.md
+│   │   │   │   └── quality-guidelines.md
+│   │   │   └── assets/
+│   │   │       └── sfx-library/         # Sound effects
+│   │   │
+│   │   ├── video-assembler/
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/
+│   │   │   │   ├── assemble_video.py
+│   │   │   │   ├── remotion_builder.js
+│   │   │   │   └── render_video.py
+│   │   │   ├── references/
+│   │   │   │   └── remotion-guide.md
+│   │   │   └── assets/
+│   │   │       ├── remotion-templates/   # React component templates
+│   │   │       │   ├── Video.tsx
+│   │   │       │   ├── Composition.tsx
+│   │   │       │   ├── TextOverlay.tsx
+│   │   │       │   └── ZoomEffect.tsx
+│   │   │       ├── package.json
+│   │   │       └── remotion.config.ts
+│   │   │
+│   │   ├── youtube-publisher/
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/
+│   │   │   │   ├── upload_video.py
+│   │   │   │   ├── oauth_handler.py
+│   │   │   │   └── metadata_optimizer.py
+│   │   │   ├── references/
+│   │   │   │   ├── youtube-api-guide.md
+│   │   │   │   └── seo-best-practices.md
+│   │   │   └── assets/
+│   │   │       └── title-templates.json
+│   │   │
+│   │   └── analytics-collector/
+│   │       ├── SKILL.md
+│   │       ├── scripts/
+│   │       │   ├── collect_analytics.py
+│   │       │   ├── analyze_performance.py
+│   │       │   └── generate_insights.py
+│   │       ├── references/
+│   │       │   ├── metrics-guide.md
+│   │       │   └── optimization-strategies.md
+│   │       └── assets/
+│   │           └── performance-template.json
+│   │
+│   ├── hooks/                           # Lifecycle hooks
 │   │   ├── session-start.sh
 │   │   └── stop-validation.sh
-│   └── commands/
+│   │
+│   └── commands/                        # Slash commands
 │       └── generate-video.md
-├── src/
-│   ├── generators/
-│   │   ├── ideation.py
-│   │   ├── scripting.py
-│   │   └── scene_planning.py
-│   ├── api_clients/
-│   │   ├── veo3_client.py
-│   │   ├── elevenlabs_client.py
-│   │   ├── dalle_client.py
-│   │   └── soundverse_client.py
-│   ├── video/
-│   │   ├── remotion/
-│   │   │   ├── src/
-│   │   │   │   ├── Video.tsx
-│   │   │   │   ├── Composition.tsx
-│   │   │   │   └── utils/
-│   │   │   ├── package.json
-│   │   │   └── remotion.config.ts
-│   │   └── render.py
-│   ├── publishing/
-│   │   ├── youtube_uploader.py
-│   │   └── oauth_handler.py
-│   └── analytics/
-│       ├── collector.py
-│       └── analyzer.py
-├── data/
-│   ├── videos/
-│   ├── assets/
-│   ├── analytics/
-│   └── performance_log.json
-├── config/
-│   ├── api_keys.env
-│   ├── youtube_oauth.json
-│   └── generation_params.yaml
-├── scripts/
-│   ├── daily_generation.sh
-│   └── setup_oauth.py
+│
+├── data/                                # Generated data & outputs
+│   ├── videos/                          # Rendered video files
+│   ├── assets/                          # Generated images, audio
+│   ├── ideas/                           # Daily idea outputs
+│   ├── scripts/                         # Generated scripts
+│   ├── analytics/                       # Analytics data
+│   └── performance_log.json             # Historical performance
+│
+├── config/                              # Configuration
+│   ├── api_keys.env                     # API credentials
+│   ├── youtube_oauth.json               # YouTube OAuth tokens
+│   └── generation_params.yaml           # Video generation settings
+│
+├── scripts/                             # Project-level automation
+│   ├── daily_generation.sh              # Cron script
+│   └── setup_oauth.py                   # OAuth setup helper
+│
 ├── .github/
 │   └── workflows/
-│       └── daily-video-generation.yml
-├── requirements.txt
-├── package.json
-└── README.md
+│       └── daily-video-generation.yml   # GitHub Actions automation
+│
+├── requirements.txt                     # Python dependencies
+├── package.json                         # Node.js dependencies (if needed)
+├── MASTER_PLAN.md                       # This document
+├── QUICK_START.md                       # Setup guide
+├── PLATFORM_RECOMMENDATION.md           # Platform analysis
+└── README.md                            # Project overview
 ```
+
+### Key Architectural Principles
+
+**1. Skills Are Self-Contained Bundles**
+Each skill directory contains:
+- **SKILL.md**: Entry point with YAML frontmatter + workflow instructions
+- **scripts/**: Executable code that runs without loading into context
+- **references/**: Detailed documentation loaded only when needed (progressive disclosure)
+- **assets/**: Templates and resources for output
+
+**2. Progressive Disclosure**
+- Claude reads SKILL.md frontmatter first (name + description)
+- Loads full SKILL.md only when skill is activated
+- References are loaded on-demand when task requires them
+- Scripts execute without loading source code into context
+
+**3. Context Efficiency**
+- Scripts run and only output consumes tokens (not source code)
+- Keep SKILL.md under 500 lines
+- Move detailed content to references/
+- Keep reference structure one level deep
+
+**4. Code Organization**
+- **Skill-specific code** → Inside skill's `scripts/` directory
+- **Shared utilities** → Can be in project root `scripts/` if truly shared
+- **API clients** → Inside the skill that uses them (or shared if used by multiple)
+- **Remotion templates** → Inside `video-assembler/assets/`
+
+**5. No Separate src/ Directory**
+Unlike traditional projects, we DON'T use a separate `src/` directory. All implementation code lives inside skill bundles for:
+- Self-containment
+- Easier discoverability by Claude
+- Context efficiency
+- Portability (skills can be shared/reused)
 
 ---
 
 ### Claude Code Skills Definitions
 
-#### Skill 1: `idea-generator.md`
+**Note**: The following are example SKILL.md templates showing the documentation that will live at `.claude/skills/{skill-name}/SKILL.md`. The actual implementation code (Python scripts, API clients, etc.) will live in each skill's `scripts/` directory.
+
+#### Skill 1: `idea-generator/SKILL.md`
 
 ```markdown
 ---
@@ -647,7 +758,7 @@ Generate 5-10 high-potential video ideas for YouTube Shorts targeting Indian aud
 - Optimize for 25-30 second duration
 ```
 
-#### Skill 2: `script-writer.md`
+#### Skill 2: `script-writer/SKILL.md`
 
 ```markdown
 ---
@@ -790,7 +901,7 @@ Voiceover: None
 - Ensure text works without audio
 ```
 
-#### Skill 3: `remotion-assembler.md`
+#### Skill 3: `video-assembler/SKILL.md`
 
 ```markdown
 ---

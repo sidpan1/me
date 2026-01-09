@@ -35,9 +35,8 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-cd src/video/remotion
-npm install
-cd ../../..
+# Note: Remotion will be in .claude/skills/video-assembler/assets/
+# after full implementation
 ```
 
 ### 2. Configure API Keys
@@ -109,32 +108,70 @@ crontab -e
 
 ## Project Structure
 
+**Architecture**: Skills are self-contained bundles with documentation AND implementation code together.
+
 ```
 autonomous-video-generation/
 ├── .claude/
-│   ├── skills/              # Claude Code skills for video generation
-│   ├── hooks/               # Lifecycle hooks
-│   └── commands/            # Custom slash commands
-├── src/
-│   ├── generators/          # Ideation, scripting, scene planning
-│   ├── api_clients/         # Veo3, ElevenLabs, DALL-E, etc.
-│   ├── video/remotion/      # Programmatic video assembly
-│   ├── publishing/          # YouTube upload and OAuth
-│   └── analytics/           # Data collection and analysis
-├── data/
-│   ├── videos/              # Generated video files
-│   ├── assets/              # Images, audio, clips
-│   ├── analytics/           # Performance data
-│   └── performance_log.json # Historical performance tracking
+│   ├── skills/                    # Self-contained skill bundles
+│   │   ├── idea-generator/        # Generate video ideas from trends
+│   │   │   ├── SKILL.md           # Skill documentation
+│   │   │   ├── scripts/           # Python scripts for idea generation
+│   │   │   ├── references/        # Detailed docs (patterns, preferences)
+│   │   │   └── assets/            # Templates
+│   │   ├── script-writer/         # Write optimized scripts
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/           # Script generation logic
+│   │   │   ├── references/        # Hook formulas, examples
+│   │   │   └── assets/            # Script templates
+│   │   ├── scene-planner/         # Plan visual scenes
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/           # Scene planning logic
+│   │   │   └── references/        # Composition guides
+│   │   ├── asset-generator/       # Generate AI assets
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/           # API clients (Veo3, DALL-E, ElevenLabs)
+│   │   │   └── references/        # API documentation
+│   │   ├── video-assembler/       # Assemble with Remotion
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/           # Remotion builder scripts
+│   │   │   └── assets/            # React component templates
+│   │   ├── youtube-publisher/     # Upload to YouTube
+│   │   │   ├── SKILL.md
+│   │   │   ├── scripts/           # Upload scripts, OAuth handler
+│   │   │   └── references/        # YouTube API guide
+│   │   └── analytics-collector/   # Collect & analyze metrics
+│   │       ├── SKILL.md
+│   │       ├── scripts/           # Analytics collection logic
+│   │       └── references/        # Metrics guide
+│   ├── hooks/                     # Lifecycle hooks
+│   │   ├── session-start.sh
+│   │   └── stop-validation.sh
+│   └── commands/                  # Slash commands
+│       └── generate-video.md
+├── data/                          # Generated outputs
+│   ├── videos/                    # Rendered video files
+│   ├── assets/                    # Generated images, audio
+│   ├── ideas/                     # Daily idea outputs
+│   ├── scripts/                   # Generated scripts
+│   ├── analytics/                 # Analytics data
+│   └── performance_log.json       # Historical performance
 ├── config/
-│   ├── api_keys.env         # API credentials (not in git)
-│   └── generation_params.yaml # Video generation settings
-├── scripts/
-│   ├── daily_generation.sh  # Cron script
-│   └── setup_oauth.py       # YouTube OAuth helper
-├── MASTER_PLAN.md           # Complete implementation guide
-└── README.md                # This file
+│   ├── api_keys.env               # API credentials (not in git)
+│   ├── youtube_oauth.json         # YouTube OAuth tokens
+│   └── generation_params.yaml     # Video generation settings
+├── scripts/                       # Project-level automation
+│   ├── daily_generation.sh        # Cron script
+│   └── setup_oauth.py             # OAuth setup helper
+├── .github/workflows/
+│   └── daily-video-generation.yml # GitHub Actions automation
+├── MASTER_PLAN.md                 # Complete implementation guide
+├── QUICK_START.md                 # Setup walkthrough
+├── PLATFORM_RECOMMENDATION.md     # Platform analysis
+└── README.md                      # This file
 ```
+
+**Key Principle**: Each skill in `.claude/skills/` is a complete, self-contained package with its own documentation, code, references, and templates. No separate `src/` directory needed.
 
 ## Key Features
 
@@ -198,8 +235,9 @@ autonomous-video-generation/
 ## Documentation
 
 - **[MASTER_PLAN.md](MASTER_PLAN.md)**: Complete implementation guide (10,000+ words)
-- **Skills Documentation**: See `.claude/skills/` for individual workflow steps
-- **API Integration Guides**: See `src/api_clients/README.md`
+- **Skills Documentation**: See `.claude/skills/{skill-name}/SKILL.md` for each workflow step
+- **Skills References**: Each skill has detailed docs in its `references/` directory
+- **Implementation Code**: All scripts live in each skill's `scripts/` directory
 
 ## Support & Contributing
 
