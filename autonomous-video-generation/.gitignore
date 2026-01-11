@@ -1,0 +1,68 @@
+# API Keys & Secrets
+config/api_keys.env
+config/youtube_oauth.json
+*.pem
+*.key
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Generated Assets
+data/videos/*.mp4
+data/assets/
+*.mp4
+*.mp3
+*.wav
+*.png
+*.jpg
+*.jpeg
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Remotion
+src/video/remotion/out/
+src/video/remotion/.remotion/
+
+# Keep structure files
+!data/videos/.gitkeep
+!data/assets/.gitkeep
+!logs/.gitkeep
