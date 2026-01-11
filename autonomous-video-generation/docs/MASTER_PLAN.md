@@ -1,5 +1,13 @@
 # Autonomous Video Generation System - Master Plan
 
+**Status**: ⚠️ **VALIDATION REQUIRED** - Not execution-ready until Phase 0 validation sprint complete
+
+**Read First**:
+- [CRITICAL_ANALYSIS.md](CRITICAL_ANALYSIS.md) - Honest assessment of gaps and risks
+- [VALIDATION_ROADMAP.md](VALIDATION_ROADMAP.md) - 2-week validation sprint (start here)
+
+---
+
 ## Vision
 
 An autonomous system powered by Claude Code that generates, publishes, analyzes, and self-improves short-form video content (YouTube Shorts) targeting Indian audiences. The system runs daily with built-in analytics feedback loops for continuous improvement.
@@ -168,7 +176,48 @@ An autonomous system powered by Claude Code that generates, publishes, analyzes,
 
 ## Execution Roadmap
 
-### Phase 1: Foundation (Month 1)
+⚠️ **IMPORTANT**: This roadmap assumes validation has passed. See [CRITICAL_ANALYSIS.md](CRITICAL_ANALYSIS.md) and complete [VALIDATION_ROADMAP.md](VALIDATION_ROADMAP.md) first.
+
+### Phase 0: Validation Sprint (Weeks 1-2) - **START HERE**
+
+**Goal**: Validate core assumptions before $700+ commitment
+
+**Timeline**: 2 weeks
+**Budget**: $50-100
+**Time**: 10-15 hours
+
+**Activities:**
+- Competitive analysis (top 20 rangoli Shorts)
+- Demand validation (search volume, trends)
+- Create 3 test videos with fal.ai
+- User feedback (20-30 people in target demo)
+- Technical validation (API testing, YouTube automation)
+- Build MVP pipeline (1 video end-to-end)
+- Publish 1 real test, track 48-hour performance
+
+**Success Metrics:**
+- Validation score >60/100 (see VALIDATION_ROADMAP.md)
+- At least 1 test video >60% retention
+- Technical pipeline works end-to-end
+- Cost within 20% of projection
+
+**Decision Point: GO / NO-GO / PIVOT**
+
+**Deliverables:**
+- Market analysis report
+- 3 test videos + performance data
+- Technical proof of concept
+- VALIDATION_DECISION.md with GO/NO-GO recommendation
+
+**If GO → Proceed to Phase 1**
+**If PIVOT → Test alternative theme**
+**If NO-GO → Stop or major rethink**
+
+📊 **See**: [VALIDATION_ROADMAP.md](VALIDATION_ROADMAP.md) for detailed day-by-day plan
+
+---
+
+### Phase 1: Foundation (Month 1) - **ONLY IF PHASE 0 = GO**
 
 **Goal**: Test and scale to 3 Shorts/day
 
